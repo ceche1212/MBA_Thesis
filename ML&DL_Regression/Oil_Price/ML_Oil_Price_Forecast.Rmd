@@ -1,0 +1,1738 @@
+---
+title: "MBA Thesis Part II, Oil Price Machine Learning Forecasting"
+author: "Luis Fernando Perez Armas"
+date: "4/23/2019"
+output: html_document
+---
+
+![](https://cdn.images.express.co.uk/img/dynamic/78/590x/Oil-prices-984856.jpg?r=1533007799406)
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(BAS)
+library(corrplot)
+library(purrr)
+library(RColorBrewer)
+library(gridExtra)
+library(broom)
+library(lubridate)
+library(cluster)
+library(Metrics)
+library(caret)
+library(xgboost)
+library(keras)
+
+```
+
+The majority of the data used for this analysis was, downloaded directly from the EIA webpage, the link can be found down below.
+
+[EIA Webpage](https://www.eia.gov/totalenergy/data/monthly/index.php)
+
+# Data Codebook
+
+Description of variables, units of measurements, data category and the source of data, can be found on the tables below:
+
+**Codebook Varible Description**
+
+Variable Name      | Description
+-------------------|------------------------------------------------------------------------------------
+Date               | Date of the observation
+Month              | Month of the observation
+Year               | Year of the observation
+Active_Rigs        | Number of active drilling rigs on and offshore recorded to be working on that date 
+US_Population      | USA population estimates for the date of the observation
+President_Party    | Identified political party for the ruling US president on the date observation
+Senate             | Political party that holds the majority of US Senate on the date of the observation
+House              | Political party that holds the majority of US congress on the date of the observation
+life_exp           | US average life expectancy at the date of the observation
+GDP                | Gross Domestic Product of the US economy on the date of the observation
+Oil_Production     | US Total oil production on the date of the observation
+Oil_Stock          | US inventory of oil in stock on the date of the observation
+Oil_Price          | US average domestic first purchase price, not corrected by inflation
+HDD                | Monthly US HDD are the number of degrees that the daily average temperature falls below 65 °F
+CDD                | Monthly US CDD are the number of degrees that the daily average temperature rises above 65 °F
+Energy_Consumption | The amount of energy consumed by the US market on the date of the observation
+Net_imports_Energy | The Net amount of energy imported by the US market on the date of the observation
+Oil_Reserves       | US proven oil reserves on the date of the observation
+Active_Conflicts   | Number of world active military conflicts on the date of the observation, includes civil wars
+Drilled_Wells      | Number of drilled wells on US on the date of the observation
+
+**Codebook Varible Units of measurement**
+
+Variable Name      | Units of measurement
+-------------------|------------------------------------------------------------------------------------
+Date               | Date format Year-Month-Day
+Month              | Integer from 1-12
+Year               | Integer 4 digits 
+Active_Rigs        | Integer each unit represents a drilling rig
+US_Population      | Numerical in Millions of people
+President_Party    | Categorical variable Either Democrat or Republican
+Senate             | Categorical variable Either Democrat or Republican
+House              | Categorical variable Either Democrat or Republican
+life_exp           | Numerical life expectancy in years
+GDP                | Numerical GDP in Trillions of dollars 10^12 USD
+Oil_Production     | Numerical Oil production in Thousand barrels per day
+Oil_Stock          | Numerical US inventory of oil in million barrels
+Oil_Price          | Numerical US dollars
+HDD                | Numerical Monthly US HDD measured un number of °F
+CDD                | Numerical Monthly US CDD measured un number of °F
+Energy_Consumption | Numerical Energy consumed in Quadrillion btu's 10^15
+Net_imports_Energy | Numerical Net energy imported in Quadrillion btu's 10^15
+Oil_Reserves       | NUmerical Oil reserves in million barrels
+Active_Conflicts   | Numerical each unit represents an active military conflict
+Drilled_Wells      | Numerical each unit represents a drilled well
+
+**Codebook Varible Source of data**
+
+Variable Name      | Units of measurement
+-------------------|------------------------------------------------------------------------------------
+Date               | Included with other measurements
+Month              | Included with other measurements
+Year               | Included with other measurements
+Active_Rigs        | [Data Link](https://www.eia.gov/totalenergy/data/monthly/pdf/sec5_3.pdf)
+US_Population      | [Data Link](https://data.worldbank.org/indicator/SP.POP.TOTL?locations=US)
+President_Party    | [Data Link](https://en.wikipedia.org/wiki/List_of_Presidents_of_the_United_States)
+Senate             | [Data Link](https://history.house.gov/Institution/Party-Divisions/Party-Divisions/)
+House              | [Data Link](https://history.house.gov/Institution/Party-Divisions/Party-Divisions/)
+life_exp           | [Data Link](https://data.worldbank.org/indicator/SP.DYN.LE00.IN?locations=US)
+GDP                | [Data Link](https://data.worldbank.org/indicator/NY.GDP.MKTP.CD?locations=US)
+Oil_Production     | [Data Link](https://www.eia.gov/totalenergy/data/monthly/pdf/sec1_5.pdf)
+Oil_Stock          | [Data Link](https://www.eia.gov/totalenergy/data/monthly/pdf/sec3_15.pdf)
+Oil_Price          | [Data Link](https://www.eia.gov/totalenergy/data/monthly/pdf/sec9_3.pdf)
+HDD                | [Data Link](https://www.eia.gov/totalenergy/data/monthly/pdf/sec1_20.pdf)
+CDD                | [Data Link](https://www.eia.gov/totalenergy/data/monthly/pdf/sec1_21.pdf)
+Energy_Consumption | [Data Link](https://www.eia.gov/totalenergy/data/monthly/pdf/sec1_7.pdf)
+Net_imports_Energy | [Data Link](https://www.eia.gov/totalenergy/data/monthly/pdf/sec1_3.pdf)
+Oil_Reserves       | [Data Link](https://www.eia.gov/dnav/pet/pet_crd_pres_dcu_NUS_a.htm)
+Active_Conflicts   | [Data Link](https://ourworldindata.org/war-and-peace)
+Active_Conflicts 2 | [Data Link](https://en.wikipedia.org/wiki/List_of_ongoing_armed_conflicts)
+Drilled_Wells      | [Data Link](https://www.eia.gov/totalenergy/data/monthly/pdf/sec5_4.pdf)
+
+
+- Raw data in original .csv and .xls formats can be found on the following [Link](https://github.com/ceche1212/MBA_Thesis/tree/master/Original_data/Raw_data)
+- Data wrangling code used on this work, can be found on the following [Link](https://github.com/ceche1212/MBA_Thesis/tree/master/Original_data/Data_wrangling)
+- Already cleaned up .RData files can be found on the following [Link](https://github.com/ceche1212/MBA_Thesis/tree/master/Original_data/Cleaned_Data)
+
+# Objective
+
+The main purpose of this work is to create models that are able to predict the rig activity (Activity_Rig) in US and the behavior of oil price (Oil_Price), based on various explanatory variables.
+
+# Exploratory Data Analysis (EDA)
+
+The Exploratory Data Analysis (EDA) performed on this dataset, so as various statistical tests, can be found on the following [Link](http://rpubs.com/ceche1212/482498)
+
+# Data
+
+The working data set is composed by 23 variables and 528 observations, there is no NA's since was already wrangled on the previous part of this work [Link](http://rpubs.com/ceche1212/482498).
+
+```{r,cache=F,echo=FALSE,comment=NA}
+
+load("Oil_Modified.RData")
+
+OIL_MODIFIED$Gov_ctrl_party<-as.factor(OIL_MODIFIED$Gov_ctrl_party)
+OIL_MODIFIED$Gov_ctrl_type<-as.factor(OIL_MODIFIED$Gov_ctrl_type)
+OIL_MODIFIED$Eco_Rec<-as.factor(OIL_MODIFIED$Eco_Rec)
+OIL_MODIFIED$Season<-as.factor(OIL_MODIFIED$Season)
+
+OIL_MODIFIED<-OIL_MODIFIED %>% select(-Drilled_Wells)
+
+#input active conflicst missing values
+
+OIL_MODIFIED[is.na(OIL_MODIFIED$Active_Conflicts),"Active_Conflicts"]<-200
+
+OIL_MODIFIED<-OIL_MODIFIED[complete.cases(OIL_MODIFIED),]
+
+# filter year 1973 for no price variation
+
+OIL_MODIFIED <- OIL_MODIFIED %>% filter(Year > 1973)
+
+str(OIL_MODIFIED)
+
+```
+
+## Response Variable transformation
+
+The previous exploratory data analysis showed that Oil Prices follow a heavily right skewed distribution.
+
+```{r,cache=F,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+OIL_MODIFIED %>% ggplot(.,aes(x=Oil_Price))+
+        geom_histogram(binwidth = 10,fill="darkgreen")+
+        ggthemes::theme_tufte()+
+        labs(title = "Oil Price Histogram",
+             x="Oil Price ($ USD")
+
+
+```
+
+Due to the severe skewness of Oil price, we will search for an adequate transformation, by using the Boxcox.lambda function in R which will return the best lambda value and therefore the most suited transformation.
+
+```{r,cache=F,echo=TRUE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+forecast::BoxCox.lambda(OIL_MODIFIED$Oil_Price)
+
+```
+
+The obtained lambda value is almost zero, which suggests a logaritmic transformation
+
+
+```{r,cache=F,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+OIL_MODIFIED %>% ggplot(.,aes(x=log(Oil_Price)))+
+        geom_histogram(binwidth = 0.4,fill="darkgreen")+
+        ggthemes::theme_tufte()+
+        labs(title = "Oil Price Histogram",
+             x="log of Oil Price ($ USD")
+
+
+```
+
+The transformation centered the distribution and reduced the right side skewness
+
+## Training/Test Splitting
+
+Due to the intrinsice association of our response variable with time, our dataset will be devided into a training and test data set, following time seres best practices on which we respect the order of observations.
+
+The training data set will be observations from 1974 up to December of 2015, and the test data set will be composed of two years of monthly observations up until December 2017. The training data set will be used to train our different models and the test, set to evaluate the quality of our models. 
+
+
+![](https://otexts.com/fpp2/fpp_files/figure-html/traintest-1.png)
+
+
+```{r,cache=F,echo=TRUE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+OIL_MODIFIED <-OIL_MODIFIED %>% mutate(Oil_Price = log(Oil_Price))
+
+oil_train <- OIL_MODIFIED[1:504,]
+
+oil_test_6M <- OIL_MODIFIED[505:510,]
+
+oil_test_1Y <- OIL_MODIFIED[505:516,]
+
+oil_test_1.5Y <- OIL_MODIFIED[505:522,]
+
+oil_test_2Y<- OIL_MODIFIED[505:528,]
+
+dim(oil_train)
+
+dim(oil_test_2Y)
+
+```
+
+
+Another important aspect of machine learning models is model tunning, due to this a partition of the training data set will be used as validation set, to tune hyperparameters and find the most optimized model, that is able to generalize to outside that and not overfit on the training set. The validation test set will be created following the concept of time series cross validation known in econometrics as “evaluation on a rolling forecasting origin”.
+
+![](https://otexts.com/fpp2/fpp_files/figure-html/cv1-1.png)
+
+Hyndman, R.J., & Athanasopoulos, G. (2018) Forecasting: principles and practice, 2nd edition, OTexts: Melbourne, Australia. OTexts.com/fpp2.
+
+## Performance Measurements and evaluation
+
+Two evaluate the quality of the models, we selected to performance measurements which are:
+
+- **Directional accuracy Ration (DAR)**: Also known as Mean Directional Accuracy (MDA), is a measure of prediction accuracy of a forecasting method in statistics. It compares the forecast direction (upward or downward) to the actual realized direction. It is defined by the following formula:
+
+
+![](https://wikimedia.org/api/rest_v1/media/math/render/svg/910e23ad55c77b7dbe786634125790a7e623d49f)
+
+
+- **Root Mean Square Error (RMSE)**: is a frequently used measure of the differences between values (sample or population values) predicted by a model or an estimator and the values observed
+
+
+![](https://wikimedia.org/api/rest_v1/media/math/render/svg/6d689379d70cd119e3a9ed3c8ae306cafa5d516d)
+
+
+- Blaskowitz, O., & Herwartz, H. (2011). On economic evaluation of directional forecasts. International Journal of Forecasting, 27(4), 1058-1065.
+- Kulkarni and Haidar, (2009). Forecasting model for crude oil price using artificial neural networks and commodity future prices.International Journal of Computer Science and Information Security, 2 (1).
+- Schnader, M. H., & Stekler, H. O. (1990). Evaluating predictions of change. Journal of Business, 99-107
+- Sinclair, T. M., Stekler, H. O., & Kitzinger, L. (2010). Directional forecasts of GDP and inflation: a joint evaluation with an application to Federal Reserve predictions. Applied Economics, 42(18), 2289-2297.
+- Hyndman, R.J., & Athanasopoulos, G. (2018) Forecasting: principles and practice, 2nd edition, OTexts: Melbourne, Australia. OTexts.com/fpp2.
+
+
+# Time Series ARIMA Modeling
+
+Thanks to the results obtained on the previously performed EDA and statistical analysis, we are aware that Oil_Prices shows a time dependency on which time data points are correlated with succesive and previous data points, thanks to a Chi-Square GOF we know that monthly data values are dependent on each other, this can also be confirmed as using and ACF plot of the variation of prices of monthly Oil price data.
+
+```{r,cache=F,echo=F,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+OIL_MODIFIED_TS <- OIL_MODIFIED  %>%
+        mutate(Oil_Price=ts(Oil_Price,start = 1974,frequency = 12),
+               Active_Rigs=ts(Active_Rigs,start = 1974,frequency = 12))
+
+# Ljung-Box test for price and diff ACF analysis
+
+
+forecast::Acf(diff(OIL_MODIFIED_TS$Oil_Price),main="Oil Diff Price ACF Plot")
+
+
+```
+
+The plot shows an strong auto-correlation at lag 1 and 2. To finally confirm this suspicious we will use an L-jung box test with an alpha value of 5% or 0.05.
+
+```{r,cache=F,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+Box.test(diff(OIL_MODIFIED_TS$Oil_Price),lag = 1,type = "Ljung")
+
+```
+
+The low p-values obtained suggest that Oil_Price time series is not "white noise" and that information can be extracted from the series, therefore a time series model might be suitable, due to this the first chosen model will be an ARIMA non seasonal model.
+
+```{r,cache=F,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+arimaauto<-forecast::auto.arima(y=OIL_MODIFIED_TS[1:504,"Oil_Price"])
+
+summary(arimaauto)
+
+forecast::checkresiduals(arimaauto)
+
+```
+
+Residuals inside the training data, seem to be normal and around 0, the Ljung box.test obtained p-value on the residuals, confirm that they are "white noise", now the next step is to evaluate the model on the test-data.But before computing eny result we should first calculate a baseline for comparisson, on this case we will use as RMSE basline, a model that uses the mean oil price of the training data as the only predicted value and for DAR we will use a model that asumes that all differences between succesives oil prices are positive (Oil price is always growing), both baselines will be calculated for the total of the test-data (2 years).
+
+```{r,cache=F,echo=T,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+(RMSE_BASELINE<-sqrt(mean((mean(exp(oil_train$Oil_Price))-exp(oil_test_2Y$Oil_Price))^2)))
+
+(DAR_BASELINE<-mean(diff(oil_train$Oil_Price)>0)*100)
+
+```
+
+With the baselines to compare is alrady the time to evaluate the performance of the ARIMA model
+
+```{r,cache=F,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+#DAR function
+
+MDirAcc <- function(actual, predicted, lag=1) {
+        return( mean(sign(diff(actual, lag=lag))==sign(diff(predicted, lag=lag))) )
+}
+
+#metrics in train
+
+RMSE_ARIMA_tr<-Metrics::rmse(actual = exp(oil_train$Oil_Price),predicted = exp(arimaauto$fitted))
+
+MAE_ARIMA_tr<-Metrics::mae(actual = exp(oil_train$Oil_Price),predicted = exp(arimaauto$fitted))
+
+RRSE_ARIMA_tr<-Metrics::rrse(actual = exp(oil_train$Oil_Price),predicted = exp(arimaauto$fitted))
+
+DAR_ARIMA_tr<-MDirAcc(actual = exp(oil_train$Oil_Price),predicted = exp(arimaauto$fitted))
+
+# 6Months
+
+RMSE_ARIMA_ts6M<-Metrics::rmse(actual = exp(oil_test_6M$Oil_Price),predicted = exp(forecast::forecast(arimaauto,h=6)$mean))
+
+MAE_ARIMA_ts6M<-Metrics::mae(actual = exp(oil_test_6M$Oil_Price),predicted = exp(forecast::forecast(arimaauto,h=6)$mean))
+
+RRSE_ARIMA_ts6M<-Metrics::rrse(actual = exp(oil_test_6M$Oil_Price),predicted = exp(forecast::forecast(arimaauto,h=6)$mean))
+
+DAR_ARIMA_ts6M<-MDirAcc(actual = exp(oil_test_6M$Oil_Price),predicted = exp(forecast::forecast(arimaauto,h=6)$mean))
+
+# 1Y ARMA 
+
+RMSE_ARIMA_ts1Y<-Metrics::rmse(actual = exp(oil_test_1Y$Oil_Price),predicted = exp(forecast::forecast(arimaauto,h=12)$mean))
+
+MAE_ARIMA_ts1Y<-Metrics::mae(actual = exp(oil_test_1Y$Oil_Price),predicted = exp(forecast::forecast(arimaauto,h=12)$mean))
+
+RRSE_ARIMA_ts1Y<-Metrics::rrse(actual = exp(oil_test_1Y$Oil_Price),predicted = exp(forecast::forecast(arimaauto,h=12)$mean))
+
+DAR_ARIMA_ts1Y<-MDirAcc(actual = exp(oil_test_1Y$Oil_Price),predicted = exp(forecast::forecast(arimaauto,h=12)$mean))
+
+#1.5Y ARMA
+
+RMSE_ARIMA_ts1.5Y<-Metrics::rmse(actual = exp(oil_test_1.5Y$Oil_Price),predicted = exp(forecast::forecast(arimaauto,h=18)$mean))
+
+MAE_ARIMA_ts1.5Y<-Metrics::mae(actual = exp(oil_test_1.5Y$Oil_Price),predicted = exp(forecast::forecast(arimaauto,h=18)$mean))
+
+RRSE_ARIMA_ts1.5Y<-Metrics::rrse(actual = exp(oil_test_1.5Y$Oil_Price),predicted = exp(forecast::forecast(arimaauto,h=18)$mean))
+
+DAR_ARIMA_ts1.5Y<-MDirAcc(actual = exp(oil_test_1.5Y$Oil_Price),predicted = exp(forecast::forecast(arimaauto,h=18)$mean))
+
+#2Y metrics
+
+RMSE_ARIMA_ts2Y<-Metrics::rmse(actual = exp(oil_test_2Y$Oil_Price),predicted = exp(forecast::forecast(arimaauto,h=24)$mean))
+
+MAE_ARIMA_ts2Y<-Metrics::mae(actual = exp(oil_test_2Y$Oil_Price),predicted = exp(forecast::forecast(arimaauto,h=24)$mean))
+
+RRSE_ARIMA_ts2Y<-Metrics::rrse(actual = exp(oil_test_2Y$Oil_Price),predicted = exp(forecast::forecast(arimaauto,h=24)$mean))
+
+DAR_ARIMA_ts2Y<-MDirAcc(actual = exp(oil_test_2Y$Oil_Price),predicted = exp(forecast::forecast(arimaauto,h=24)$mean))
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_ARIMA_tr,RMSE_ARIMA_ts6M,RMSE_ARIMA_ts1Y,RMSE_ARIMA_ts1.5Y,RMSE_ARIMA_ts2Y),
+           DAR= c(DAR_ARIMA_tr,DAR_ARIMA_ts6M,DAR_ARIMA_ts1Y,DAR_ARIMA_ts1.5Y,DAR_ARIMA_ts2Y)) %>% 
+        mutate(DAR_NUM=round(DAR*Horizon)) %>%
+        mutate(DAR=DAR*100) %>% knitr::kable()
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_ARIMA_tr,RMSE_ARIMA_ts6M,RMSE_ARIMA_ts1Y,RMSE_ARIMA_ts1.5Y,RMSE_ARIMA_ts2Y),
+           DAR= c(DAR_ARIMA_tr,DAR_ARIMA_ts6M,DAR_ARIMA_ts1Y,DAR_ARIMA_ts1.5Y,DAR_ARIMA_ts2Y)) %>% 
+        mutate(DAR=DAR*100) %>%
+        ggplot(.,aes(x=Horizon,y=RMSE))+geom_point(color="red",size=5)+geom_smooth()+
+        geom_hline(yintercept = RMSE_BASELINE,linetype="dashed",color="red")+
+        labs(title = "Oil Price ARIMA(2,1,1) Model Forecasted RMSE 24 Months",
+             y="RMSE ($ USD)",
+             x="Time (Months)")+
+        ggthemes::theme_tufte()
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_ARIMA_tr,RMSE_ARIMA_ts6M,RMSE_ARIMA_ts1Y,RMSE_ARIMA_ts1.5Y,RMSE_ARIMA_ts2Y),
+           DAR= c(DAR_ARIMA_tr,DAR_ARIMA_ts6M,DAR_ARIMA_ts1Y,DAR_ARIMA_ts1.5Y,DAR_ARIMA_ts2Y)) %>% 
+        mutate(DAR=DAR*100) %>%
+        ggplot(.,aes(x=Horizon,y=DAR))+geom_point(color="red",size=5)+geom_smooth()+
+        geom_hline(yintercept = DAR_BASELINE,linetype="dashed",color="red")+
+        labs(title = "Oil Price ARIMA(2,1,1) Model Forecasted DAR 24 Months",
+             y="DAR %",
+             x="Time (Months)")+
+        ylim(0,100)+
+        ggthemes::theme_tufte()
+
+```
+
+As the model attempts to forecast away from the training data, the RMSE increases.with the 24 months test data, using the mean baseline as a model yields lower and better RMSE values, altough a main difference with a mean model is that ARIMA provides DAR values, which incredibly valuable for financial markets spacially for commodities like oil that have plenty of different financial objects and markets to trade them, on this metric the ARIMA model outperforms the basline model of 56% growing trend, another important aspect to highlight is that a mean model is not able to produce DAR, since all values are constant. 
+
+# Time Series Linear Modeling
+
+The next model to test is a linear regression including all explanatory variables and using time cross validations or “evaluation on a rolling forecasting origin” with an initial window of 48 months (4 years) for model training and succesive validation sets of 24 months (2 years).
+
+```{r,cache=F,echo=TRUE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+total_formula_price<-as.formula(Oil_Price ~ Month +
+                                        Year +
+                                        Active_Rigs +
+                                        US_Population +
+                                        President_Party +
+                                        Senate +
+                                        House +
+                                        life_exp +
+                                        GDP +
+                                        Oil_Production +
+                                        Oil_Stock +
+                                        HDD +
+                                        CDD +
+                                        Energy_Consumption +
+                                        Net_imports_Energy +
+                                        Oil_Reserves +
+                                        Active_Conflicts +
+                                        Eco_Rec +
+                                        Season +
+                                        Gov_ctrl_type +
+                                        Gov_ctrl_party)
+
+
+set.seed(123)
+
+time_control <- trainControl(method = "timeslice",
+                             initialWindow = 48,
+                             horizon = 24,
+                             fixedWindow = TRUE,
+                             verboseIter = TRUE,
+                             allowParallel = TRUE)
+
+```
+
+With the setup ready the next step is to create the linear model; for practicity purposes we are going to use the caret library which allow use to use the timeSlice cross validation. Every model in caret requires hyperparameters tunning, however an "lm" model doesnt have any hyperparameters to tine therefore we will create a custom tunning grid with only the intercept as the hyperparameter and we will set this parameter to false.
+
+```{r,cache=TRUE,include=FALSE,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+lm_tune_grid <- expand.grid(intercept=FALSE)
+
+tictoc::tic()
+
+lm_model_price <- train(total_formula_price,
+                        data = oil_train,
+                        tuneGrid = lm_tune_grid,
+                        trControl = time_control,
+                        method  = "lm")
+
+tictoc::toc()
+
+```
+
+```{r,cache=F,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+lm_model_price
+
+summary(lm_model_price)
+
+```
+
+The model has a high coefficient of determination with the training set, however the out of sample or validation RMSE shows high values of error, the next step is to compare the model with our testing data
+
+```{r,cache=F,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+# in training performace metric metrics
+
+RMSE_lm_tr<-Metrics::rmse(actual = exp(oil_train$Oil_Price),predicted = exp(predict(lm_model_price, newdata=oil_train)))
+
+MAE_lm_tr<-Metrics::mae(actual = exp(oil_train$Oil_Price),predicted = exp(predict(lm_model_price, newdata=oil_train)))
+
+RRSE_lm_tr<-Metrics::rrse(actual = exp(oil_train$Oil_Price),predicted = exp(predict(lm_model_price, newdata=oil_train)))
+
+DAR_lm_tr<-MDirAcc(actual = exp(oil_train$Oil_Price),predicted = exp(predict(lm_model_price, newdata=oil_train)))
+
+# 6M test performance metrics
+
+RMSE_lm_ts6M<-Metrics::rmse(actual = exp(oil_test_6M$Oil_Price),predicted = exp(predict(lm_model_price, newdata=oil_test_6M)))
+
+MAE_lm_ts6M<-Metrics::mae(actual = exp(oil_test_6M$Oil_Price),predicted = exp(predict(lm_model_price, newdata=oil_test_6M)))
+
+RRSE_lm_ts6M<-Metrics::rrse(actual = exp(oil_test_6M$Oil_Price),predicted = exp(predict(lm_model_price, newdata=oil_test_6M)))
+
+DAR_lm_ts6M<-MDirAcc(actual = exp(oil_test_6M$Oil_Price),predicted = exp(predict(lm_model_price, newdata=oil_test_6M)))
+
+# 1Y test performance metrics
+
+RMSE_lm_ts1Y<-Metrics::rmse(actual = exp(oil_test_1Y$Oil_Price),predicted = exp(predict(lm_model_price, newdata=oil_test_1Y)))
+
+MAE_lm_ts1Y<-Metrics::mae(actual = exp(oil_test_1Y$Oil_Price),predicted = exp(predict(lm_model_price, newdata=oil_test_1Y)))
+
+RRSE_lm_ts1Y<-Metrics::rrse(actual = exp(oil_test_1Y$Oil_Price),predicted = exp(predict(lm_model_price, newdata=oil_test_1Y)))
+
+DAR_lm_ts1Y<-MDirAcc(actual = exp(oil_test_1Y$Oil_Price),predicted = exp(predict(lm_model_price, newdata=oil_test_1Y)))
+
+# 1.5Y test performance metrics
+
+RMSE_lm_ts1.5Y<-Metrics::rmse(actual = exp(oil_test_1.5Y$Oil_Price),predicted = exp(predict(lm_model_price, newdata=oil_test_1.5Y)))
+
+MAE_lm_ts1.5Y<-Metrics::mae(actual = exp(oil_test_1.5Y$Oil_Price),predicted = exp(predict(lm_model_price, newdata=oil_test_1.5Y)))
+
+RRSE_lm_ts1.5Y<-Metrics::rrse(actual = exp(oil_test_1.5Y$Oil_Price),predicted = exp(predict(lm_model_price, newdata=oil_test_1.5Y)))
+
+DAR_lm_ts1.5Y<-MDirAcc(actual = exp(oil_test_1.5Y$Oil_Price),predicted = exp(predict(lm_model_price, newdata=oil_test_1.5Y)))
+
+# 2Y test performance metrics
+
+RMSE_lm_ts2Y<-Metrics::rmse(actual = exp(oil_test_2Y$Oil_Price),predicted = exp(predict(lm_model_price, newdata=oil_test_2Y)))
+
+MAE_lm_ts2Y<-Metrics::mae(actual = exp(oil_test_2Y$Oil_Price),predicted = exp(predict(lm_model_price, newdata=oil_test_2Y)))
+
+RRSE_lm_ts2Y<-Metrics::rrse(actual = exp(oil_test_2Y$Oil_Price),predicted = exp(predict(lm_model_price, newdata=oil_test_2Y)))
+
+DAR_lm_ts2Y<-MDirAcc(actual = exp(oil_test_2Y$Oil_Price),predicted = exp(predict(lm_model_price, newdata=oil_test_2Y)))
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_lm_tr,RMSE_lm_ts6M,RMSE_lm_ts1Y,RMSE_lm_ts1.5Y,RMSE_lm_ts2Y),
+           DAR= c(DAR_lm_tr,DAR_lm_ts6M,DAR_lm_ts1Y,DAR_lm_ts1.5Y,DAR_lm_ts2Y)) %>% 
+        mutate(DAR_NUM=round(DAR*Horizon)) %>%
+        mutate(DAR=DAR*100) %>% knitr::kable()
+
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_lm_tr,RMSE_lm_ts6M,RMSE_lm_ts1Y,RMSE_lm_ts1.5Y,RMSE_lm_ts2Y),
+           DAR= c(DAR_lm_tr,DAR_lm_ts6M,DAR_lm_ts1Y,DAR_lm_ts1.5Y,DAR_lm_ts2Y)) %>% 
+        mutate(DAR_NUM=round(DAR*Horizon)) %>%
+        mutate(DAR=DAR*100) %>%
+        ggplot(.,aes(x=Horizon,y=RMSE))+geom_point(color="red",size=5)+geom_smooth()+
+        geom_hline(yintercept = RMSE_BASELINE,linetype="dashed",color="red")+
+        labs(title = "Oil Price Linear Model Forecasted RMSE 24 Months",
+             y="RMSE ($ USD)",
+             x="Time (Months)")+
+        ggthemes::theme_tufte()
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_lm_tr,RMSE_lm_ts6M,RMSE_lm_ts1Y,RMSE_lm_ts1.5Y,RMSE_lm_ts2Y),
+           DAR= c(DAR_lm_tr,DAR_lm_ts6M,DAR_lm_ts1Y,DAR_lm_ts1.5Y,DAR_lm_ts2Y)) %>% 
+        mutate(DAR_NUM=round(DAR*Horizon)) %>%
+        mutate(DAR=DAR*100) %>%
+        ggplot(.,aes(x=Horizon,y=DAR))+geom_point(color="red",size=5)+geom_smooth()+
+        geom_hline(yintercept = DAR_BASELINE,linetype="dashed",color="red")+
+        labs(title = "Oil Price Linear Model Forecasted DAR 24 Months",
+             y="DAR %",
+             x="Time (Months)")+
+        ylim(0,100)+
+        ggthemes::theme_tufte()
+
+```
+
+Similar to ARIMA, As the linear model attempts to forecast away from the training data the RMSE increases.with the 24 months test data, using the mean baseline as a model yields lower and better RMSE values, for the linear model this also applies to other time horizons such as 1,1.5 years. The DAR values produced by the linear model outperforms the basline model of 56% growing trend, on time horizons below one year it renders superior results, however at 24 months the model barely arrives to achieve the baseline DAR percentage.
+
+# Time Series Random Forest Modeling
+
+The next model to test is random forest model including all explanatory variables and using time series cross validations or “evaluation on a rolling forecasting origin” with an initial window of 48 months (4 years) for model training and succesive validation sets of 24 months (2 years). The training control parameters were already setup during the creation of the linear model, so as the formuala to be used, the only thin remaining before modeling, is to set up the model hyperparameters. For practicity purposes we are going to use the caret package, and we will ask caret to try 5 combinations of Hyperparameters, which on the case of random forest, the only sensible parameter to vary is the MTRY, which is the number of random variables to pick for each tree.
+
+```{r,cache=TRUE,include=FALSE,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+set.seed(123)
+
+time_control2 <- trainControl(method = "timeslice",
+                             initialWindow = 48,
+                             horizon = 24,
+                             fixedWindow = TRUE,
+                             verboseIter = TRUE,
+                             allowParallel = TRUE)
+
+tictoc::tic()
+
+randomF_model_price2 <- train(total_formula_price,
+                             data=oil_train,
+                             method="ranger",
+                             tuneLength = 5,
+                             trControl = time_control2)
+
+tictoc::toc()
+
+```
+
+```{r,cache=F,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+randomF_model_price2
+
+plot(randomF_model_price2)
+
+```
+
+Compared with the linear model the out of sample RMSE values are drastically lower, it is important to highlight that the values reported of RMSE by the summary of the model are in fact RMSE log since we performed a response variable transformation, to obtain the RMSE values in US dollars we should exponentiate them first. As the model plot shows,the model was tunned or optimized to use 7 randomly selected predictors MTRY which yields the best prediction results. THe next step is to test the model against the testing data.
+
+```{r,cache=F,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+RMSE_RF_tr<-Metrics::rmse(actual = exp(oil_train$Oil_Price),predicted = exp(predict(randomF_model_price2, newdata=oil_train)))
+
+MAE_RF_tr<-Metrics::mae(actual = exp(oil_train$Oil_Price),predicted = exp(predict(randomF_model_price2, newdata=oil_train)))
+
+RRSE_RF_tr<-Metrics::rrse(actual = exp(oil_train$Oil_Price),predicted = exp(predict(randomF_model_price2, newdata=oil_train)))
+
+DAR_RF_tr<-MDirAcc(actual = exp(oil_train$Oil_Price),predicted = exp(predict(randomF_model_price2, newdata=oil_train)))
+
+# 6M test performance metrics
+
+RMSE_RF_ts6M<-Metrics::rmse(actual = exp(oil_test_6M$Oil_Price),predicted = exp(predict(randomF_model_price2, newdata=oil_test_6M)))
+
+MAE_RF_ts6M<-Metrics::mae(actual = exp(oil_test_6M$Oil_Price),predicted = exp(predict(randomF_model_price2, newdata=oil_test_6M)))
+
+RRSE_RF_ts6M<-Metrics::rrse(actual = exp(oil_test_6M$Oil_Price),predicted = exp(predict(randomF_model_price2, newdata=oil_test_6M)))
+
+DAR_RF_ts6M<-MDirAcc(actual = exp(oil_test_6M$Oil_Price),predicted = exp(predict(randomF_model_price2, newdata=oil_test_6M)))
+
+# 1Y test performance metrics
+
+RMSE_RF_ts1Y<-Metrics::rmse(actual = exp(oil_test_1Y$Oil_Price),predicted = exp(predict(randomF_model_price2, newdata=oil_test_1Y)))
+
+MAE_RF_ts1Y<-Metrics::mae(actual = exp(oil_test_1Y$Oil_Price),predicted = exp(predict(randomF_model_price2, newdata=oil_test_1Y)))
+
+RRSE_RF_ts1Y<-Metrics::rrse(actual = exp(oil_test_1Y$Oil_Price),predicted = exp(predict(randomF_model_price2, newdata=oil_test_1Y)))
+
+DAR_RF_ts1Y<-MDirAcc(actual = exp(oil_test_1Y$Oil_Price),predicted = exp(predict(randomF_model_price2, newdata=oil_test_1Y)))
+
+# 1.5Y test performance metrics
+
+RMSE_RF_ts1.5Y<-Metrics::rmse(actual = exp(oil_test_1.5Y$Oil_Price),predicted = exp(predict(randomF_model_price2, newdata=oil_test_1.5Y)))
+
+MAE_RF_ts1.5Y<-Metrics::mae(actual = exp(oil_test_1.5Y$Oil_Price),predicted = exp(predict(randomF_model_price2, newdata=oil_test_1.5Y)))
+
+RRSE_RF_ts1.5Y<-Metrics::rrse(actual = exp(oil_test_1.5Y$Oil_Price),predicted = exp(predict(randomF_model_price2, newdata=oil_test_1.5Y)))
+
+DAR_RF_ts1.5Y<-MDirAcc(actual = exp(oil_test_1.5Y$Oil_Price),predicted = exp(predict(randomF_model_price2, newdata=oil_test_1.5Y)))
+
+
+# 2Y test performance metrics
+
+RMSE_RF_ts2Y<-Metrics::rmse(actual = exp(oil_test_2Y$Oil_Price),predicted = exp(predict(randomF_model_price2, newdata=oil_test_2Y)))
+
+MAE_RF_ts2Y<-Metrics::mae(actual = exp(oil_test_2Y$Oil_Price),predicted = exp(predict(randomF_model_price2, newdata=oil_test_2Y)))
+
+RRSE_RF_ts2Y<-Metrics::rrse(actual = exp(oil_test_2Y$Oil_Price),predicted = exp(predict(randomF_model_price2, newdata=oil_test_2Y)))
+
+DAR_RF_ts2Y<-MDirAcc(actual = exp(oil_test_2Y$Oil_Price),predicted = exp(predict(randomF_model_price2, newdata=oil_test_2Y)))
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_RF_tr,RMSE_RF_ts6M,RMSE_RF_ts1Y,RMSE_RF_ts1.5Y,RMSE_RF_ts2Y),
+           DAR= c(DAR_RF_tr,DAR_RF_ts6M,DAR_RF_ts1Y,DAR_RF_ts1.5Y,DAR_RF_ts2Y)) %>% 
+        mutate(DAR_NUM=round(DAR*Horizon)) %>%
+        mutate(DAR=DAR*100) %>% knitr::kable()
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_RF_tr,RMSE_RF_ts6M,RMSE_RF_ts1Y,RMSE_RF_ts1.5Y,RMSE_RF_ts2Y),
+           DAR= c(DAR_RF_tr,DAR_RF_ts6M,DAR_RF_ts1Y,DAR_RF_ts1.5Y,DAR_RF_ts2Y)) %>% 
+        mutate(DAR_NUM=round(DAR*Horizon)) %>%
+        mutate(DAR=DAR*100) %>%
+        ggplot(.,aes(x=Horizon,y=RMSE))+geom_point(color="red",size=5)+geom_smooth()+
+        geom_hline(yintercept = RMSE_BASELINE,linetype="dashed",color="red")+
+        labs(title = "Oil Price Random Forest Model Forecasted RMSE 24 Months",
+             y="RMSE ($ USD)",
+             x="Time (Months)")+
+        ggthemes::theme_tufte()
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_RF_tr,RMSE_RF_ts6M,RMSE_RF_ts1Y,RMSE_RF_ts1.5Y,RMSE_RF_ts2Y),
+           DAR= c(DAR_RF_tr,DAR_RF_ts6M,DAR_RF_ts1Y,DAR_RF_ts1.5Y,DAR_RF_ts2Y)) %>% 
+        mutate(DAR_NUM=round(DAR*Horizon)) %>%
+        mutate(DAR=DAR*100) %>%
+        ggplot(.,aes(x=Horizon,y=DAR))+geom_point(color="red",size=5)+geom_smooth()+
+        geom_hline(yintercept = DAR_BASELINE,linetype="dashed",color="red")+
+        labs(title = "Oil Price Random Forest Model Forecasted DAR 24 Months",
+             y="DAR %",
+             x="Time (Months)")+
+        ylim(0,100)+
+        ggthemes::theme_tufte()
+
+
+```
+
+As opposed to previous evaluated models the testing data RMSE of Random Forest does not increases with time horizon, in fact random forest outperforms the mean baseline model RMSE, in all testing time horizons. However in terms of DAR the model is only able to perform better than the baseline until 18 months of testing data, after the model starts to desestablize and it actually underperforms the 56% DAR baseline model. 
+
+# Time Series Extreme gradient boosting Modeling XGboost
+
+The next model to test is an Extreme Gradient boosted model including all explanatory variables and using time series cross validations or “evaluation on a rolling forecasting origin” with an initial window of 48 months (4 years) for model training and succesive validation sets of 24 months (2 years). The training control parameters were already setup during the creation of the linear model, however in terms of the formula, Xgboost requires the input of explanatory variables as a matrix and an special input of the response variable, therefore  we will not use the formulation notation used before on previous models.
+
+For practicity purposes we are going to use the caret package to build the model, however due to the complexity of the model we will create a customized grid of hyperparameters to find out the best combination of hyperparameters, for this specific case the best combination of hyperparameters found was:
+
+- nrounds = 100,
+- max_depth = 6,
+- eta = 0.3,
+- gamma = 0,
+- colsample_bytree = 1,
+- min_child_weight = 1,
+- subsample = 1
+
+XGBoost is an algorithm that has recently been dominating applied machine learning and Kaggle competitions for structured or tabular data. XGBoost is an implementation of gradient boosted decision trees designed for speed and performance.[ref.](https://machinelearningmastery.com/gentle-introduction-xgboost-applied-machine-learning/)
+
+For more information on the algorithm, the following video provides a great description of it capabilities
+
+<iframe width="700" height="400" src="https://www.youtube.com/embed/wPqtzj5VZus" frameborder="0" allowfullscreen></iframe>
+
+```{r,cache=F,echo=TRUE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+trainX<- data.matrix(select(oil_train,-Oil_Price,-Date))
+
+set.seed(123)
+
+tunegrid_xg_default <- expand.grid(
+        nrounds = 100,
+        max_depth = 6,
+        eta = 0.3,
+        gamma = 0,
+        colsample_bytree = 1,
+        min_child_weight = 1,
+        subsample = 1)
+
+```
+
+With all parameters setup the next step is to create the model
+
+```{r,cache=TRUE,include=FALSE,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+tictoc::tic()
+
+XGboost_model_price_2 <- train(x=trainX,
+                                  y=oil_train$Oil_Price,
+                                  trControl = time_control2,
+                                  method = "xgbTree",
+                                  tuneGrid=tunegrid_xg_default,
+                                  verbose = TRUE)
+
+tictoc::toc()
+
+```
+
+```{r,cache=F,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+XGboost_model_price_2
+
+```
+
+Compared with Random Forest, the out of sample RMSE values are similar, it is important to highlight that the values reported of RMSE by the summary of the model are in fact RMSE log since we performed a response variable transformation, to obtain the RMSE values in US dollars we should exponentiate them first. THe next step is to test the model against the testing data.
+
+```{r,cache=F,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+RMSE_XG_tr<-Metrics::rmse(actual = exp(oil_train$Oil_Price),
+              predicted = exp(predict(XGboost_model_price_2, newdata=data.matrix(oil_train))))
+
+MAE_XG_tr<-Metrics::mae(actual = exp(oil_train$Oil_Price),
+                         predicted = exp(predict(XGboost_model_price_2, newdata=data.matrix(oil_train))))
+
+RRSE_XG_tr<-Metrics::rrse(actual = exp(oil_train$Oil_Price),
+                           predicted = exp(predict(XGboost_model_price_2, newdata=data.matrix(oil_train))))
+
+DAR_XG_tr<-MDirAcc(actual = exp(oil_train$Oil_Price),
+                    predicted = exp(predict(XGboost_model_price_2, newdata=data.matrix(oil_train))))
+
+# 6M test performance metrics
+
+RMSE_XG_ts6M<-Metrics::rmse(actual = exp(oil_test_6M$Oil_Price),
+              predicted = exp(predict(XGboost_model_price_2, newdata=data.matrix(oil_test_6M))))
+
+MAE_XG_ts6M<-Metrics::mae(actual = exp(oil_test_6M$Oil_Price),
+                           predicted = exp(predict(XGboost_model_price_2, newdata=data.matrix(oil_test_6M))))
+
+RRSE_XG_ts6M<-Metrics::rrse(actual = exp(oil_test_6M$Oil_Price),
+                             predicted = exp(predict(XGboost_model_price_2, newdata=data.matrix(oil_test_6M))))
+
+DAR_XG_ts6M<-MDirAcc(actual = exp(oil_test_6M$Oil_Price),
+                      predicted = exp(predict(XGboost_model_price_2, newdata=data.matrix(oil_test_6M))))
+
+
+# 1Y test performance metrics
+
+RMSE_XG_ts1Y<-Metrics::rmse(actual = exp(oil_test_1Y$Oil_Price),
+              predicted = exp(predict(XGboost_model_price_2, newdata=data.matrix(oil_test_1Y))))
+
+MAE_XG_ts1Y<-Metrics::mae(actual = exp(oil_test_1Y$Oil_Price),
+                           predicted = exp(predict(XGboost_model_price_2, newdata=data.matrix(oil_test_1Y))))
+
+RRSE_XG_ts1Y<-Metrics::rrse(actual = exp(oil_test_1Y$Oil_Price),
+        predicted = exp(predict(XGboost_model_price_2, newdata=data.matrix(oil_test_1Y))))
+
+DAR_XG_ts1Y<-MDirAcc(actual = exp(oil_test_1Y$Oil_Price),
+                      predicted = exp(predict(XGboost_model_price_2, newdata=data.matrix(oil_test_1Y))))
+
+# 1.5Y test performance metrics
+
+RMSE_XG_ts1.5Y<-Metrics::rmse(actual = exp(oil_test_1.5Y$Oil_Price),
+                            predicted = exp(predict(XGboost_model_price_2, newdata=data.matrix(oil_test_1.5Y))))
+
+MAE_XG_ts1.5Y<-Metrics::mae(actual = exp(oil_test_1.5Y$Oil_Price),
+                             predicted = exp(predict(XGboost_model_price_2, newdata=data.matrix(oil_test_1.5Y))))
+
+RRSE_XG_ts1.5Y<-Metrics::rrse(actual = exp(oil_test_1.5Y$Oil_Price),
+                               predicted = exp(predict(XGboost_model_price_2, newdata=data.matrix(oil_test_1.5Y))))
+
+DAR_XG_ts1.5Y<-MDirAcc(actual = exp(oil_test_1.5Y$Oil_Price),
+                        predicted = exp(predict(XGboost_model_price_2, newdata=data.matrix(oil_test_1.5Y))))
+
+# 2Y test performance metrics
+
+RMSE_XG_ts2Y<-Metrics::rmse(actual = exp(oil_test_2Y$Oil_Price),
+                              predicted = exp(predict(XGboost_model_price_2, newdata=data.matrix(oil_test_2Y))))
+
+MAE_XG_ts2Y<-Metrics::mae(actual = exp(oil_test_2Y$Oil_Price),
+                           predicted = exp(predict(XGboost_model_price_2, newdata=data.matrix(oil_test_2Y))))
+
+RRSE_XG_ts2Y<-Metrics::rrse(actual = exp(oil_test_2Y$Oil_Price),
+                             predicted = exp(predict(XGboost_model_price_2, newdata=data.matrix(oil_test_2Y))))
+
+DAR_XG_ts2Y<-MDirAcc(actual = exp(oil_test_2Y$Oil_Price),
+                      predicted = exp(predict(XGboost_model_price_2, newdata=data.matrix(oil_test_2Y))))
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_XG_tr,RMSE_XG_ts6M,RMSE_XG_ts1Y,RMSE_XG_ts1.5Y,RMSE_XG_ts2Y),
+           DAR= c(DAR_XG_tr,DAR_XG_ts6M,DAR_XG_ts1Y,DAR_XG_ts1.5Y,DAR_XG_ts2Y)) %>% 
+        mutate(DAR_NUM=round(DAR*Horizon)) %>%
+        mutate(DAR=DAR*100) %>% knitr::kable()
+
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_XG_tr,RMSE_XG_ts6M,RMSE_XG_ts1Y,RMSE_XG_ts1.5Y,RMSE_XG_ts2Y),
+           DAR= c(DAR_XG_tr,DAR_XG_ts6M,DAR_XG_ts1Y,DAR_XG_ts1.5Y,DAR_XG_ts2Y)) %>% 
+        mutate(DAR_NUM=round(DAR*Horizon)) %>%
+        mutate(DAR=DAR*100) %>%
+        ggplot(.,aes(x=Horizon,y=RMSE))+geom_point(color="red",size=5)+geom_smooth()+
+        geom_hline(yintercept = RMSE_BASELINE,linetype="dashed",color="red")+
+        labs(title = "Oil Price XGboost Model Forecasted RMSE 24 Months",
+             y="RMSE ($ USD)",
+             x="Time (Months)")+
+        ggthemes::theme_tufte()
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_XG_tr,RMSE_XG_ts6M,RMSE_XG_ts1Y,RMSE_XG_ts1.5Y,RMSE_XG_ts2Y),
+           DAR= c(DAR_XG_tr,DAR_XG_ts6M,DAR_XG_ts1Y,DAR_XG_ts1.5Y,DAR_XG_ts2Y)) %>% 
+        mutate(DAR_NUM=round(DAR*Horizon)) %>%
+        mutate(DAR=DAR*100) %>%
+        ggplot(.,aes(x=Horizon,y=DAR))+geom_point(color="red",size=5)+geom_smooth()+
+        geom_hline(yintercept = DAR_BASELINE,linetype="dashed",color="red")+
+        labs(title = "Oil Price XGboost Model Forecasted DAR 24 Months",
+             y="DAR %",
+             x="Time (Months)")+
+        ylim(0,100)+
+        ggthemes::theme_tufte()
+
+
+```
+
+As opposed to previous evaluated models such as linear model and ARIMA, the testing data RMSE of XGboost does not increases with time horizon, in fact XGboost outperforms the mean baseline model RMSE, in all testing time horizons, and the values seems to stabilize in the long run. XGboost also provides lower RMSE values than Random Forest, which was already an improvement over "lm" and "ARIMA". However in terms of DAR the model is only able to perform better than the baseline until 18 months of testing data, after the model starts to desestablize and it actually underperforms the 56% DAR baseline model.
+
+# Time Series Support Vector Machine Modeling SVM
+
+The next model to test is a Support Vector Machine model, and specifically and specifically an SVM using an RBF, a Radial Basis Function, we will use the model including all explanatory variables and using time series cross validations or “evaluation on a rolling forecasting origin” with an initial window of 48 months (4 years) for model training and succesive validation sets of 24 months (2 years). The training control parameters were already setup during the creation of the linear model, so as the formuala to be used, the only thin remaining before modeling, is to set up the model hyperparameters. For practicity purposes we are going to use the caret package, however due to the complexity of the model we will create a customized grid of hyperparameters to find out the best combination of hyperparameters.
+
+```{r,cache=F,echo=TRUE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+SVMgrid <- expand.grid(sigma = seq(0.005,0.02,by=0.005), C = c(100,200,300,400))
+
+```
+
+With all setup up the next step is to model
+
+```{r,cache=TRUE,include=FALSE,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+tictoc::tic()
+
+SVM_model_price2 <- train(total_formula_price,
+                         data=oil_train,
+                         method="svmRadial",
+                         tuneGrid = SVMgrid ,
+                         trControl = time_control2)
+
+tictoc::toc()
+```
+
+```{r,cache=F,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+SVM_model_price2
+
+tuneplot <- function(x, probs = .90) {
+        ggplot(x) +
+                coord_cartesian(ylim = c(quantile(x$results$RMSE, probs = probs), min(x$results$RMSE))) +
+                theme_bw()
+}
+
+tuneplot(SVM_model_price2)
+
+```
+
+Compared with Xgboost and RF, the out of sample RMSE values are higher, it is important to highlight that the values reported of RMSE by the summary of the model are in fact RMSE log since we performed a response variable transformation, to obtain the RMSE values in US dollars we should exponentiate them first. As per the plot shows, the best combination of hyperparameters is a Cost of 100 and a sigma of 0.02
+
+THe next step is to test the model against the testing data.
+
+```{r,cache=F,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+RMSE_SVM_tr<-Metrics::rmse(actual = exp(oil_train$Oil_Price),predicted = exp(predict(SVM_model_price2, newdata=oil_train)))
+
+MAE_SVM_tr<-Metrics::mae(actual = exp(oil_train$Oil_Price),predicted = exp(predict(SVM_model_price2, newdata=oil_train)))
+
+RRSE_SVM_tr<-Metrics::rrse(actual = exp(oil_train$Oil_Price),predicted = exp(predict(SVM_model_price2, newdata=oil_train)))
+
+DAR_SVM_tr<-MDirAcc(actual = exp(oil_train$Oil_Price),predicted = exp(predict(SVM_model_price2, newdata=oil_train)))
+
+# 6M test performance metrics
+
+RMSE_SVM_ts6M<-Metrics::rmse(actual = exp(oil_test_6M$Oil_Price),predicted = exp(predict(SVM_model_price2, newdata=oil_test_6M)))
+
+MAE_SVM_ts6M<-Metrics::mae(actual = exp(oil_test_6M$Oil_Price),predicted = exp(predict(SVM_model_price2, newdata=oil_test_6M)))
+
+RRSE_SVM_ts6M<-Metrics::rrse(actual = exp(oil_test_6M$Oil_Price),predicted = exp(predict(SVM_model_price2, newdata=oil_test_6M)))
+
+DAR_SVM_ts6M<-MDirAcc(actual = exp(oil_test_6M$Oil_Price),predicted = exp(predict(SVM_model_price2, newdata=oil_test_6M)))
+
+# 1Y test performance metrics
+
+RMSE_SVM_ts1Y<-Metrics::rmse(actual = exp(oil_test_1Y$Oil_Price),predicted = exp(predict(SVM_model_price2, newdata=oil_test_1Y)))
+
+MAE_SVM_ts1Y<-Metrics::mae(actual = exp(oil_test_1Y$Oil_Price),predicted = exp(predict(SVM_model_price2, newdata=oil_test_1Y)))
+
+RRSE_SVM_ts1Y<-Metrics::rrse(actual = exp(oil_test_1Y$Oil_Price),predicted = exp(predict(SVM_model_price2, newdata=oil_test_1Y)))
+
+DAR_SVM_ts1Y<-MDirAcc(actual = exp(oil_test_1Y$Oil_Price),predicted = exp(predict(SVM_model_price2, newdata=oil_test_1Y)))
+
+# 1.5Y test performance metrics
+
+RMSE_SVM_ts1.5Y<-Metrics::rmse(actual = exp(oil_test_1.5Y$Oil_Price),predicted = exp(predict(SVM_model_price2, newdata=oil_test_1.5Y)))
+
+MAE_SVM_ts1.5Y<-Metrics::mae(actual = exp(oil_test_1.5Y$Oil_Price),predicted = exp(predict(SVM_model_price2, newdata=oil_test_1.5Y)))
+
+RRSE_SVM_ts1.5Y<-Metrics::rrse(actual = exp(oil_test_1.5Y$Oil_Price),predicted = exp(predict(SVM_model_price2, newdata=oil_test_1.5Y)))
+
+DAR_SVM_ts1.5Y<-MDirAcc(actual = exp(oil_test_1.5Y$Oil_Price),predicted = exp(predict(SVM_model_price2, newdata=oil_test_1.5Y)))
+
+# 2Y test performance metrics
+
+RMSE_SVM_ts2Y<-Metrics::rmse(actual = exp(oil_test_2Y$Oil_Price),predicted = exp(predict(SVM_model_price2, newdata=oil_test_2Y)))
+
+MAE_SVM_ts2Y<-Metrics::mae(actual = exp(oil_test_2Y$Oil_Price),predicted = exp(predict(SVM_model_price2, newdata=oil_test_2Y)))
+
+RRSE_SVM_ts2Y<-Metrics::rrse(actual = exp(oil_test_2Y$Oil_Price),predicted = exp(predict(SVM_model_price2, newdata=oil_test_2Y)))
+
+DAR_SVM_ts2Y<-MDirAcc(actual = exp(oil_test_2Y$Oil_Price),predicted = exp(predict(SVM_model_price2, newdata=oil_test_2Y)))
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_SVM_tr,RMSE_SVM_ts6M,RMSE_SVM_ts1Y,RMSE_SVM_ts1.5Y,RMSE_SVM_ts2Y),
+           DAR= c(DAR_SVM_tr,DAR_SVM_ts6M,DAR_SVM_ts1Y,DAR_SVM_ts1.5Y,DAR_SVM_ts2Y)) %>% 
+        mutate(DAR_NUM=round(DAR*Horizon)) %>%
+        mutate(DAR=DAR*100) %>% knitr::kable()
+
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_SVM_tr,RMSE_SVM_ts6M,RMSE_SVM_ts1Y,RMSE_SVM_ts1.5Y,RMSE_SVM_ts2Y),
+           DAR= c(DAR_SVM_tr,DAR_SVM_ts6M,DAR_SVM_ts1Y,DAR_SVM_ts1.5Y,DAR_SVM_ts2Y)) %>% 
+        mutate(DAR_NUM=round(DAR*Horizon)) %>%
+        mutate(DAR=DAR*100) %>%
+        ggplot(.,aes(x=Horizon,y=RMSE))+geom_point(color="red",size=5)+geom_smooth()+
+        geom_hline(yintercept = RMSE_BASELINE,linetype="dashed",color="red")+
+        labs(title = "Oil Price SVM-RBF Model Forecasted RMSE 24 Months",
+             y="RMSE ($ USD)",
+             x="Time (Months)")+
+        ggthemes::theme_tufte()
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_SVM_tr,RMSE_SVM_ts6M,RMSE_SVM_ts1Y,RMSE_SVM_ts1.5Y,RMSE_SVM_ts2Y),
+           DAR= c(DAR_SVM_tr,DAR_SVM_ts6M,DAR_SVM_ts1Y,DAR_SVM_ts1.5Y,DAR_SVM_ts2Y)) %>% 
+        mutate(DAR_NUM=round(DAR*Horizon)) %>%
+        mutate(DAR=DAR*100) %>%
+        ggplot(.,aes(x=Horizon,y=DAR))+geom_point(color="red",size=5)+geom_smooth()+
+        geom_hline(yintercept = DAR_BASELINE,linetype="dashed",color="red")+
+        labs(title = "Oil Price SVM-RBF Model Forecasted DAR 24 Months",
+             y="DAR %",
+             x="Time (Months)")+
+        ylim(0,100)+
+        ggthemes::theme_tufte()
+```
+
+Similar to previous evaluated models such as linear model and ARIMA, the testing data RMSE of SVM increases with time horizon, after one year the mean baseline model starts to outperform the SVM. However in terms of DAR the SVM model outperform the baseline 56% growing DAR for all testing time horizons and it also performs better in the long term than previous models.
+
+# Multilayer Perceptron feedforward Neural Network regression Modeling
+
+A neural network can be thought of as a network of “neurons” which are organised in layers. The predictors (or inputs) form the bottom layer, and the forecasts (or outputs) form the top layer. There may also be intermediate layers containing “hidden neurons”.
+
+The simplest networks contain no hidden layers and are equivalent to linear regressions. Figure 11.11 shows the neural network version of a linear regression with four predictors. The coefficients attached to these predictors are called “weights”. The forecasts are obtained by a linear combination of the inputs. The weights are selected in the neural network framework using a “learning algorithm” that minimises a “cost function” such as the MSE. Of course, in this simple example, we can use linear regression which is a much more efficient method of training the model.
+
+![](https://otexts.com/fpp2/nnet1.png)
+
+
+Once we add an intermediate layer with hidden neurons, the neural network becomes non-linear.
+
+![](https://otexts.com/fpp2/nnet2.png)
+
+This is known as a multilayer feed-forward network, where each layer of nodes receives inputs from the previous layers. The outputs of the nodes in one layer are inputs to the next layer. The inputs to each node are combined using a weighted linear combination. The result is then modified by a nonlinear function before being output
+
+or example, the inputs into hidden neuron in the previous Figure are combined linearly to give
+
+$$z_j = b_j + \sum_{i=1}^4 w_{i,j} x_i.$$
+In the hidden layer, this is then modified using a nonlinear function such as a sigmoid, or relu
+
+$$s(z) = \frac{1}{1+e^{-z}},$$
+
+to give the input for the next layer. This tends to reduce the effect of extreme input values, thus making the network somewhat robust to outliers.
+
+The parameters  b1,b2,b3 and  w1,1,…,w4,3 are “learned” from the data. The values of the weights are often restricted to prevent them from becoming too large. The parameter that restricts the weights is known as the “decay parameter”, and is often set to be equal to 0.1.
+
+The weights take random values to begin with, and these are then updated using the observed data. Consequently, there is an element of randomness in the predictions produced by a neural network. Therefore, the network is usually trained several times using different random starting points, and the results are averaged.
+
+The number of hidden layers, and the number of nodes in each hidden layer, must be specified in advance
+
+*Hyndman, R.J., & Athanasopoulos, G. (2018) Forecasting: principles and practice, 2nd edition, OTexts: Melbourne, Australia. OTexts.com/fpp2.* 
+
+The next model to test in our work is a simple feedforward neural network MLP for regression, including all explanatory variables but not using the time series cross validation since it will require a more advanced neural net, which will be a recurrent neural net. The neural net requires the input data as a matrix will all numeric parameters and scaled up. We will build the network using the Keras package using googles TensorFlow as the engine of the neural net. 
+
+For the initial architecture of our neural Net we will use:
+
+- An initial input layer
+- A hidden flatten layer
+- A densely connected hidden layer with 128 units, with an L2 regularizer using "relu" as the activation function
+- A dropout layer with a dropout rate of 0.2
+- A densely connected layer with only one unit for the output value
+
+as the neural network optimizer we will use "adam" instead of the classical "rmsProp" and we will use the mean squared errors "mse" as the loss function, we will train the net with a batch size of 1, sample and we will use 20 epochs to train it.
+
+```{r,cache=T,echo=TRUE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+trainX_DL<-trainX
+
+dimnames(trainX_DL) <- NULL
+
+m<-apply(trainX_DL, 2, mean)
+
+std<-apply(trainX_DL, 2, sd)
+
+trainX_DL<-scale(trainX_DL,center = m,scale = std)
+
+target<-data.matrix(oil_train$Oil_Price)
+
+set.seed(123)
+
+model_nnet_price <- keras_model_sequential() 
+
+model_nnet_price %>% 
+        layer_flatten(input_shape = dim(trainX_DL)[[2]]) %>%
+        layer_dense(units = 128,activation = "relu",kernel_regularizer = regularizer_l2(0.01)) %>%
+        layer_dropout(rate = 0.2) %>%
+        layer_dense(units = 1)
+
+model_nnet_price
+
+model_nnet_price %>% compile(
+        optimizer = "adam",
+        loss = "mse",
+        metrics = c("mae")
+)
+
+net <- model_nnet_price %>%
+        fit(trainX_DL,
+            target,
+            epochs = 20,
+            batch_size=1
+        )
+
+pred_train<-model_nnet_price %>% predict(trainX_DL) %>% exp()
+
+oil_test_6M_DL<- select(oil_test_6M,-Oil_Price,-Date) %>% data.matrix()
+
+dimnames(oil_test_6M_DL) <- NULL
+
+oil_test_6M_DL<-scale(oil_test_6M_DL,center = m,scale = std)
+
+pred6M<-model_nnet_price %>% predict(oil_test_6M_DL) %>% exp()
+
+oil_test_1Y_DL<- select(oil_test_1Y,-Oil_Price,-Date) %>% data.matrix()
+
+dimnames(oil_test_1Y_DL) <- NULL
+
+oil_test_1Y_DL<-scale(oil_test_1Y_DL,center = m,scale = std)
+
+pred1Y<-model_nnet_price %>% predict(oil_test_1Y_DL) %>% exp()
+
+oil_test_1.5Y_DL<- select(oil_test_1.5Y,-Oil_Price,-Date) %>% data.matrix()
+
+dimnames(oil_test_1.5Y_DL) <- NULL
+
+oil_test_1.5Y_DL<-scale(oil_test_1.5Y_DL,center = m,scale = std)
+
+pred1.5Y<-model_nnet_price %>% predict(oil_test_1.5Y_DL) %>% exp()
+
+oil_test_2Y_DL<- select(oil_test_2Y,-Oil_Price,-Date) %>% data.matrix()
+
+dimnames(oil_test_2Y_DL) <- NULL
+
+oil_test_2Y_DL<-scale(oil_test_2Y_DL,center = m,scale = std)
+
+pred2Y<-model_nnet_price %>% predict(oil_test_2Y_DL) %>% exp()
+
+```
+
+```{r,cache=F,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+plot(net)+ggthemes::theme_tufte()+labs(title = "Neural Network Train process")
+
+```
+
+Compared with previous models the in sample errors are minimum however we can only confirm the validity of the model by using the testing data
+
+```{r,cache=F,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+# in train predictions
+
+
+
+RMSE_NNET_tr<-Metrics::rmse(actual = exp(target),predicted = pred_train)
+
+MAE_NNET_tr<-Metrics::mae(actual = exp(target),predicted = pred_train)
+
+RRSE_NNET_tr<-Metrics::rrse(actual = exp(target),predicted = pred_train)
+
+DAR_NNET_tr<-MDirAcc(actual = exp(target),predicted = pred_train)
+
+#6M metrics
+
+
+
+RMSE_NNET_ts6M<-Metrics::rmse(actual = exp(oil_test_6M$Oil_Price),predicted = pred6M)
+
+MAE_NNET_ts6M<-Metrics::mae(actual = exp(oil_test_6M$Oil_Price),predicted = pred6M)
+
+RRSE_NNET_ts6M<-Metrics::rrse(actual = exp(oil_test_6M$Oil_Price),predicted = pred6M)
+
+DAR_NNET_ts6M<-MDirAcc(actual = exp(oil_test_6M$Oil_Price),predicted = pred6M)
+
+#1Y metrics
+
+
+
+RMSE_NNET_ts1Y<-Metrics::rmse(actual = exp(oil_test_1Y$Oil_Price),predicted = pred1Y)
+
+MAE_NNET_ts1Y<-Metrics::mae(actual = exp(oil_test_1Y$Oil_Price),predicted = pred1Y)
+
+RRSE_NNET_ts1Y<-Metrics::rrse(actual = exp(oil_test_1Y$Oil_Price),predicted = pred1Y)
+
+DAR_NNET_ts1Y<-MDirAcc(actual = exp(oil_test_1Y$Oil_Price),predicted = pred1Y)
+
+#1.5Y metrics
+
+
+
+RMSE_NNET_ts1.5Y<-Metrics::rmse(actual = exp(oil_test_1.5Y$Oil_Price),predicted = pred1.5Y)
+
+MAE_NNET_ts1.5Y<-Metrics::mae(actual = exp(oil_test_1.5Y$Oil_Price),predicted = pred1.5Y)
+
+RRSE_NNET_ts1.5Y<-Metrics::rrse(actual = exp(oil_test_1.5Y$Oil_Price),predicted = pred1.5Y)
+
+DAR_NNET_ts1.5Y<-MDirAcc(actual = exp(oil_test_1.5Y$Oil_Price),predicted = pred1.5Y)
+
+#2Y metrics
+
+
+
+RMSE_NNET_ts2Y<-Metrics::rmse(actual = exp(oil_test_2Y$Oil_Price),predicted = pred2Y)
+
+MAE_NNET_ts2Y<-Metrics::mae(actual = exp(oil_test_2Y$Oil_Price),predicted = pred2Y)
+
+RRSE_NNET_ts2Y<-Metrics::rrse(actual = exp(oil_test_2Y$Oil_Price),predicted = pred2Y)
+
+DAR_NNET_ts2Y<-MDirAcc(actual = exp(oil_test_2Y$Oil_Price),predicted = pred2Y)
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_NNET_tr,RMSE_NNET_ts6M,RMSE_NNET_ts1Y,RMSE_NNET_ts1.5Y,RMSE_NNET_ts2Y),
+           DAR= c(DAR_NNET_tr,DAR_NNET_ts6M,DAR_NNET_ts1Y,DAR_NNET_ts1.5Y,DAR_NNET_ts2Y)) %>% 
+        mutate(DAR_NUM=round(DAR*Horizon)) %>%
+        mutate(DAR=DAR*100) %>% knitr::kable()
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_NNET_tr,RMSE_NNET_ts6M,RMSE_NNET_ts1Y,RMSE_NNET_ts1.5Y,RMSE_NNET_ts2Y),
+           DAR= c(DAR_NNET_tr,DAR_NNET_ts6M,DAR_NNET_ts1Y,DAR_NNET_ts1.5Y,DAR_NNET_ts2Y)) %>% 
+        mutate(DAR_NUM=round(DAR*Horizon)) %>%
+        mutate(DAR=DAR*100) %>% 
+        ggplot(.,aes(x=Horizon,y=RMSE))+geom_point(color="red",size=5)+geom_smooth()+
+        geom_hline(yintercept = RMSE_BASELINE,linetype="dashed",color="red")+
+        labs(title = "Oil Price Neural Net MLP Model Forecasted RMSE 24 Months",
+             y="RMSE ($ USD)",
+             x="Time (Months)")+
+        ggthemes::theme_tufte()
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_NNET_tr,RMSE_NNET_ts6M,RMSE_NNET_ts1Y,RMSE_NNET_ts1.5Y,RMSE_NNET_ts2Y),
+           DAR= c(DAR_NNET_tr,DAR_NNET_ts6M,DAR_NNET_ts1Y,DAR_NNET_ts1.5Y,DAR_NNET_ts2Y)) %>% 
+        mutate(DAR_NUM=round(DAR*Horizon)) %>%
+        mutate(DAR=DAR*100) %>% 
+        ggplot(.,aes(x=Horizon,y=DAR))+geom_point(color="red",size=5)+geom_smooth()+
+        geom_hline(yintercept = DAR_BASELINE,linetype="dashed",color="red")+
+        labs(title = "Oil Price Neural Net MLP Model Forecasted DAR 24 Months",
+             y="DAR %",
+             x="Time (Months)")+
+        ylim(0,100)+
+        ggthemes::theme_tufte()
+
+```
+
+Similar to previous evaluated models such as linear model and ARIMA, the testing data RMSE of Neural increasess with time horizon, however the Neural outperforms the mean baseline model RMSE, in all testing time horizons, and the values seems to stabilize in the long run. However in terms of DAR the model mostly underperforms the 56% DAR baseline model.
+
+#Time Series Neural network autoregression Modeling
+
+With time series data, lagged values of the time series can be used as inputs to a neural network, just as we used lagged values in ARIMA models,We call this a neural network autoregression or NNAR model.Due to complexity we will only consider feed-forward networks with one hidden layer.
+
+The previous modeled MLP Neural network model was built using all explanatory variables as inputs for a regression, on this case we will use only the oil price and its time dependency as the input variables, we will use previous values of oil prices as input exploratory variables attempting to predict the future behavior as in autoregressive models, but using the architecture of single hidden layer neural network. It is important to mention that an architecture that considers both the time dependency of NNAR and MLPs can be built and it known as a recurrent neural net, this concept will be tested on future sections of this work
+
+For the architecture of this network we will use one single hidden layer densely connected, using 60 units and 12 inputs or one year of previous data points as explanatory variables.
+
+```{r,cache=T,echo=TRUE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+set.seed(123)
+
+NNETAr <- forecast::nnetar(y=OIL_MODIFIED_TS[1:504,"Oil_Price"],p=12,size = 60)
+
+NNETAr
+
+```
+
+Compared with previous models the in sample errors are minimum however we can only confirm the validity of the model by using the testing data
+
+```{r,cache=F,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+RMSE_NNAR_tr<-Metrics::rmse(actual = exp(oil_train$Oil_Price[-c(1:12)]),predicted = exp(NNETAr$fitted[-c(1:12)]))
+
+MAE_NNAR_tr<-Metrics::mae(actual = exp(oil_train$Oil_Price[-c(1:12)]),predicted = exp(NNETAr$fitted[-c(1:12)]))
+
+RRSE_NNAR_tr<-Metrics::rrse(actual = exp(oil_train$Oil_Price[-c(1:12)]),predicted = exp(NNETAr$fitted[-c(1:12)]))
+
+DAR_NNAR_tr<-MDirAcc(actual = exp(oil_train$Oil_Price[-c(1:12)]),predicted = exp(NNETAr$fitted[-c(1:12)]))
+
+# 6Months
+
+RMSE_NNAR_ts6M<-Metrics::rmse(actual = exp(oil_test_6M$Oil_Price),predicted = exp(forecast::forecast(NNETAr,h=6)$mean))
+
+MAE_NNAR_ts6M<-Metrics::mae(actual = exp(oil_test_6M$Oil_Price),predicted = exp(forecast::forecast(NNETAr,h=6)$mean))
+
+RRSE_NNAR_ts6M<-Metrics::rrse(actual = exp(oil_test_6M$Oil_Price),predicted = exp(forecast::forecast(NNETAr,h=6)$mean))
+
+DAR_NNAR_ts6M<-MDirAcc(actual = exp(oil_test_6M$Oil_Price),predicted = exp(forecast::forecast(NNETAr,h=6)$mean))
+
+# 1Y NNAR 
+
+RMSE_NNAR_ts1Y<-Metrics::rmse(actual = exp(oil_test_1Y$Oil_Price),predicted = exp(forecast::forecast(NNETAr,h=12)$mean))
+
+MAE_NNAR_ts1Y<-Metrics::mae(actual = exp(oil_test_1Y$Oil_Price),predicted = exp(forecast::forecast(NNETAr,h=12)$mean))
+
+RRSE_NNAR_ts1Y<-Metrics::rrse(actual = exp(oil_test_1Y$Oil_Price),predicted = exp(forecast::forecast(NNETAr,h=12)$mean))
+
+DAR_NNAR_ts1Y<-MDirAcc(actual = exp(oil_test_1Y$Oil_Price),predicted = exp(forecast::forecast(NNETAr,h=12)$mean))
+
+#1.5Y NNAR
+
+RMSE_NNAR_ts1.5Y<-Metrics::rmse(actual = exp(oil_test_1.5Y$Oil_Price),predicted = exp(forecast::forecast(NNETAr,h=18)$mean))
+
+MAE_NNAR_ts1.5Y<-Metrics::mae(actual = exp(oil_test_1.5Y$Oil_Price),predicted = exp(forecast::forecast(NNETAr,h=18)$mean))
+
+RRSE_NNAR_ts1.5Y<-Metrics::rrse(actual = exp(oil_test_1.5Y$Oil_Price),predicted = exp(forecast::forecast(NNETAr,h=18)$mean))
+
+DAR_NNAR_ts1.5Y<-MDirAcc(actual = exp(oil_test_1.5Y$Oil_Price),predicted = exp(forecast::forecast(NNETAr,h=18)$mean))
+
+#2Y NNAR metrics
+
+RMSE_NNAR_ts2Y<-Metrics::rmse(actual = exp(oil_test_2Y$Oil_Price),predicted = exp(forecast::forecast(NNETAr,h=24)$mean))
+
+MAE_NNAR_ts2Y<-Metrics::mae(actual = exp(oil_test_2Y$Oil_Price),predicted = exp(forecast::forecast(NNETAr,h=24)$mean))
+
+RRSE_NNAR_ts2Y<-Metrics::rrse(actual = exp(oil_test_2Y$Oil_Price),predicted = exp(forecast::forecast(NNETAr,h=24)$mean))
+
+DAR_NNAR_ts2Y<-MDirAcc(actual = exp(oil_test_2Y$Oil_Price),predicted = exp(forecast::forecast(NNETAr,h=24)$mean))
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_NNAR_tr,RMSE_NNAR_ts6M,RMSE_NNAR_ts1Y,RMSE_NNAR_ts1.5Y,RMSE_NNAR_ts2Y),
+           DAR= c(DAR_NNAR_tr,DAR_NNAR_ts6M,DAR_NNAR_ts1Y,DAR_NNAR_ts1.5Y,DAR_NNAR_ts2Y)) %>% 
+        mutate(DAR_NUM=round(DAR*Horizon)) %>%
+        mutate(DAR=DAR*100) %>% knitr::kable()
+
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_NNAR_tr,RMSE_NNAR_ts6M,RMSE_NNAR_ts1Y,RMSE_NNAR_ts1.5Y,RMSE_NNAR_ts2Y),
+           DAR= c(DAR_NNAR_tr,DAR_NNAR_ts6M,DAR_NNAR_ts1Y,DAR_NNAR_ts1.5Y,DAR_NNAR_ts2Y)) %>% 
+        mutate(DAR_NUM=round(DAR*Horizon)) %>%
+        mutate(DAR=DAR*100) %>%  
+        ggplot(.,aes(x=Horizon,y=RMSE))+geom_point(color="red",size=5)+geom_smooth()+
+        geom_hline(yintercept = RMSE_BASELINE,linetype="dashed",color="red")+
+        labs(title = "Oil Price Neural Net MLP Model Forecasted RMSE 24 Months",
+             y="RMSE ($ USD)",
+             x="Time (Months)")+
+        ggthemes::theme_tufte()
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_NNAR_tr,RMSE_NNAR_ts6M,RMSE_NNAR_ts1Y,RMSE_NNAR_ts1.5Y,RMSE_NNAR_ts2Y),
+           DAR= c(DAR_NNAR_tr,DAR_NNAR_ts6M,DAR_NNAR_ts1Y,DAR_NNAR_ts1.5Y,DAR_NNAR_ts2Y)) %>% 
+        mutate(DAR_NUM=round(DAR*Horizon)) %>%
+        mutate(DAR=DAR*100) %>%  
+        ggplot(.,aes(x=Horizon,y=DAR))+geom_point(color="red",size=5)+geom_smooth()+
+        geom_hline(yintercept = DAR_BASELINE,linetype="dashed",color="red")+
+        labs(title = "Oil Price Neural Net MLP Model Forecasted DAR 24 Months",
+             y="DAR %",
+             x="Time (Months)")+
+        ylim(0,100)+
+        ggthemes::theme_tufte()
+
+```
+
+As opposed to previous evaluated models such as linear model and ARIMA, the testing data RMSE of the NNAR does not increases with time horizon, in fact NNAR outperforms the mean baseline model RMSE, in all testing time horizons, and the values seems to stabilize in the long run. In terms of DAR the model is  able to perform better than the 56% DAR baseline for all time horizons of the testing data.
+
+# Model comparisson
+
+With all models already built up, the next step is to compare their performance against each other
+
+```{r,cache=F,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+TR<-data.frame(models=c("lm","RF","XGboost","SVM_RBF","ARIMA","NNET","NNAR"),
+           RMSE=c(RMSE_lm_tr,RMSE_RF_tr,RMSE_XG_tr,RMSE_SVM_tr,RMSE_ARIMA_tr,RMSE_NNET_tr,RMSE_NNAR_tr),
+           MAE=c(MAE_lm_tr,MAE_RF_tr,MAE_XG_tr,MAE_SVM_tr,MAE_ARIMA_tr,MAE_NNET_tr,MAE_NNAR_tr),
+           RRSE=c(RRSE_lm_tr,RRSE_RF_tr,RRSE_XG_tr,RRSE_SVM_tr,RRSE_ARIMA_tr,RRSE_NNET_tr,RRSE_NNAR_tr),
+           DAR=c(DAR_lm_tr,DAR_RF_tr,DAR_XG_tr,DAR_SVM_tr,DAR_ARIMA_tr,DAR_NNET_tr,DAR_NNAR_tr)) 
+
+
+
+half_year<-data.frame(models=c("lm","RF","XGboost","SVM_RBF","ARIMA","NNET","NNAR"),
+           RMSE=c(RMSE_lm_ts6M,RMSE_RF_ts6M,RMSE_XG_ts6M,RMSE_SVM_ts6M,RMSE_ARIMA_ts6M,RMSE_NNET_ts6M,RMSE_NNAR_ts6M),
+           MAE=c(MAE_lm_ts6M,MAE_RF_ts6M,MAE_XG_ts6M,MAE_SVM_ts6M,MAE_ARIMA_ts6M,MAE_NNET_ts6M,MAE_NNAR_ts6M),
+           RRSE=c(RRSE_lm_ts6M,RRSE_RF_ts6M,RRSE_XG_ts6M,RRSE_SVM_ts6M,RRSE_ARIMA_ts6M,RRSE_NNET_ts6M,RRSE_NNAR_ts6M),
+           DAR=c(DAR_lm_ts6M,DAR_RF_ts6M,DAR_XG_ts6M,DAR_SVM_ts6M,DAR_ARIMA_ts6M,DAR_NNET_ts6M,DAR_NNAR_ts6M)) 
+
+
+one_year<-data.frame(models=c("lm","RF","XGboost","SVM_RBF","ARIMA","NNET","NNAR"),
+           RMSE=c(RMSE_lm_ts1Y,RMSE_RF_ts1Y,RMSE_XG_ts1Y,RMSE_SVM_ts1Y,RMSE_ARIMA_ts1Y,RMSE_NNET_ts1Y,RMSE_NNAR_ts1Y),
+           MAE=c(MAE_lm_ts1Y,MAE_RF_ts1Y,MAE_XG_ts1Y,MAE_SVM_ts1Y,MAE_ARIMA_ts1Y,MAE_NNET_ts1Y,MAE_NNAR_ts1Y),
+           RRSE=c(RRSE_lm_ts1Y,RRSE_RF_ts1Y,RRSE_XG_ts1Y,RRSE_SVM_ts1Y,RRSE_ARIMA_ts1Y,RRSE_NNET_ts1Y,RRSE_NNAR_ts1Y),
+           DAR=c(DAR_lm_ts1Y,DAR_RF_ts1Y,DAR_XG_ts1Y,DAR_SVM_ts1Y,DAR_ARIMA_ts1Y,DAR_NNET_ts1Y,DAR_NNAR_ts1Y)) 
+
+
+one_half_year<-data.frame(models=c("lm","RF","XGboost","SVM_RBF","ARIMA","NNET","NNAR"),
+           RMSE=c(RMSE_lm_ts1.5Y,RMSE_RF_ts1.5Y,RMSE_XG_ts1.5Y,RMSE_SVM_ts1.5Y,RMSE_ARIMA_ts1.5Y,RMSE_NNET_ts1.5Y,RMSE_NNAR_ts1.5Y),
+           MAE=c(MAE_lm_ts1.5Y,MAE_RF_ts1.5Y,MAE_XG_ts1.5Y,MAE_SVM_ts1.5Y,MAE_ARIMA_ts1.5Y,MAE_NNET_ts1.5Y,MAE_NNAR_ts1.5Y),
+           RRSE=c(RRSE_lm_ts1.5Y,RRSE_RF_ts1.5Y,RRSE_XG_ts1.5Y,RRSE_SVM_ts1.5Y,RRSE_ARIMA_ts1.5Y,RRSE_NNET_ts1.5Y,RRSE_NNAR_ts1.5Y),
+           DAR=c(DAR_lm_ts1.5Y,DAR_RF_ts1.5Y,DAR_XG_ts1.5Y,DAR_SVM_ts1.5Y,DAR_ARIMA_ts1.5Y,DAR_NNET_ts1.5Y,DAR_NNAR_ts1.5Y)) 
+
+
+two_year<-data.frame(models=c("lm","RF","XGboost","SVM_RBF","ARIMA","NNET","NNAR"),
+           RMSE=c(RMSE_lm_ts2Y,RMSE_RF_ts2Y,RMSE_XG_ts2Y,RMSE_SVM_ts2Y,RMSE_ARIMA_ts2Y,RMSE_NNET_ts2Y,RMSE_NNAR_ts2Y),
+           MAE=c(MAE_lm_ts2Y,MAE_RF_ts2Y,MAE_XG_ts2Y,MAE_SVM_ts2Y,MAE_ARIMA_ts2Y,MAE_NNET_ts2Y,MAE_NNAR_ts2Y),
+           RRSE=c(RRSE_lm_ts2Y,RRSE_RF_ts2Y,RRSE_XG_ts2Y,RRSE_SVM_ts2Y,RRSE_ARIMA_ts2Y,RRSE_NNET_ts2Y,RRSE_NNAR_ts2Y),
+           DAR=c(DAR_lm_ts2Y,DAR_RF_ts2Y,DAR_XG_ts2Y,DAR_SVM_ts2Y,DAR_ARIMA_ts2Y,DAR_NNET_ts2Y,DAR_NNAR_ts2Y)) 
+
+results<-list(TR,half_year,one_year,one_half_year,two_year)
+
+bind_rows(results,.id="Horizon") %>% mutate(Horizon = case_when(Horizon == 1 ~ "0 Months",
+                                                                Horizon == 2 ~ "6 Months",
+                                                                Horizon == 3 ~ "12 Months",
+                                                                Horizon == 4 ~ "18 Months",
+                                                                Horizon == 5 ~ "24 Months")) %>% 
+select(-MAE,-RRSE) %>%
+        knitr::kable()
+
+bind_rows(results,.id="Horizon") %>% mutate(Horizon = case_when(Horizon == 1 ~ 0,
+                                                                Horizon == 2 ~ 6,
+                                                                Horizon == 3 ~ 12,
+                                                                Horizon == 4 ~ 18,
+                                                                Horizon == 5 ~ 24)) %>%
+        ggplot(.,aes(x=factor(Horizon),y=DAR,color=models))+geom_point(size=6,alpha=0.6)+
+        geom_hline(yintercept = mean(diff(oil_train$Oil_Price)>0),color="red",linetype="dashed")+
+        labs(title = "ML Oil Price Models DAR",
+             caption = "Red line corresponds to the DAR of a model that assumes only Growing Oil Prices",
+             x="Time Horizon",
+             y="Directional Accuracy Ration")+ggthemes::theme_tufte()
+
+
+bind_rows(results,.id="Horizon") %>% mutate(Horizon = case_when(Horizon == 1 ~ 0,
+                                                                Horizon == 2 ~ 6,
+                                                                Horizon == 3 ~ 12,
+                                                                Horizon == 4 ~ 18,
+                                                                Horizon == 5 ~ 24)) %>%
+        ggplot(.,aes(x=factor(Horizon),y=RMSE,color=models))+geom_point(size=6,alpha=0.6)+
+        geom_hline(yintercept = sqrt(mean((mean(exp(oil_train$Oil_Price))-exp(oil_test_2Y$Oil_Price))^2)),color="red",linetype="dashed")+
+        labs(title = "ML Oil Price Models RMSE",
+             caption = "Red line corresponds to the RMSE of predicting future Oil Price using the mean Oil Price in the training as Model",
+             x="Time Horizon",
+             y="Root Mean Squared Error")+ggthemes::theme_tufte()
+
+
+```
+
+Looking at the table and plots with more detail, we can notice that XGboost provides the best results in terms of RMSE, altough in terms of DAR, NNAR and SVM provides the best results, to obtain the best of the two worlds we might work on the concept of stacked models.
+
+#Machine Learning stack modeling
+
+The concept of stacking is fairly simple it is the concept of using multiple learning algorithms to obtain better predictive performance than could be obtained from any of the constituent learning algorithms. Stacking-a Meta Modeling Technique is introduced by Wolpert in the year 1992.In Stacking there are two types of learners called Base Learners and a Meta Learner.Base Learners and Meta Learners are the normal machine learning algorithms like Random Forests, SVM, Perceptron etc.Base Learners try to fit the normal data sets where as Meta learner fit on the predictions of the base Learner.
+
+![](https://cdn-images-1.medium.com/max/1000/0*L-yEiG9ONP-AWJ82.png)
+
+For the specific case of this work, we will use as Meta learner a simple linear combination of the obtained models
+
+$$Stack = 0.35*NNAR+0.4*XG + 0.1*ARIMA+ 0.05*RF+0.05*NNET+0.025*lm+0.025*SVM$$
+
+
+```{r,cache=F,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+Ensemble_DF <- data.frame(Actual_Price= oil_test_2Y$Oil_Price)
+
+Ensemble_DF$lm <- predict(lm_model_price, newdata=oil_test_2Y)
+
+Ensemble_DF$ARIMA <- forecast::forecast(arimaauto,h=24)$mean
+
+Ensemble_DF$RF<- predict(randomF_model_price2, newdata=oil_test_2Y)
+
+Ensemble_DF$XG<- predict(XGboost_model_price_2, newdata=data.matrix(oil_test_2Y))
+
+Ensemble_DF$SVM <- predict(SVM_model_price2, newdata=oil_test_2Y)
+
+Ensemble_DF$NNET <-as.vector(log(pred2Y))
+
+Ensemble_DF$NNAR <- forecast::forecast(NNETAr,h=24)$mean
+
+Ensemble_DF$Date <- oil_test_2Y$Date
+
+Ensemble_DF<-Ensemble_DF %>% mutate(Stack_model=0.35*NNAR+
+                               0.4*XG+
+                               0.1*ARIMA+
+                               0.05*RF+
+                               0.05*NNET+
+                               0.025*lm+
+                               0.025*SVM)
+
+Ensemble_DF %>% summarise(RMSE_Stack= Metrics::rmse(exp(Actual_Price),exp(Stack_model)),
+                          RMSE_NNAR = Metrics::rmse(exp(Actual_Price),exp(NNAR)),
+                          RMSE_XG = Metrics::rmse(exp(Actual_Price),exp(XG)),
+                          DAR_Stack=MDirAcc(exp(Actual_Price),exp(Stack_model)),
+                          DAR_NNAR=MDirAcc(exp(Actual_Price),exp(NNAR)),
+                          DAR_XG=MDirAcc(exp(Actual_Price),exp(XG))) %>% knitr::kable()
+
+
+RMSE_Stack_ts6M<-Ensemble_DF[1:6,] %>%
+        summarise(RMSE= Metrics::rmse(exp(Actual_Price),exp(Stack_model))) %>% pull() 
+
+DAR_Stack_ts6M<-Ensemble_DF[1:6,] %>%
+        summarise(DAR = MDirAcc(exp(Actual_Price),exp(Stack_model))) %>% pull()
+
+
+RMSE_Stack_ts1Y<-Ensemble_DF[1:12,] %>%
+        summarise(RMSE= Metrics::rmse(exp(Actual_Price),exp(Stack_model))) %>% pull()
+
+DAR_Stack_ts1Y<-Ensemble_DF[1:12,] %>%
+        summarise(DAR = MDirAcc(exp(Actual_Price),exp(Stack_model))) %>% pull()
+
+
+RMSE_Stack_ts1.5Y<-Ensemble_DF[1:18,] %>%
+        summarise(RMSE= Metrics::rmse(exp(Actual_Price),exp(Stack_model))) %>% pull()
+
+DAR_Stack_ts1.5Y<-Ensemble_DF[1:18,] %>%
+        summarise(DAR = MDirAcc(exp(Actual_Price),exp(Stack_model))) %>% pull()
+
+
+RMSE_Stack_ts2Y<-Ensemble_DF %>%
+        summarise(RMSE= Metrics::rmse(exp(Actual_Price),exp(Stack_model))) %>% pull()
+
+DAR_Stack_ts2Y<-Ensemble_DF %>%
+        summarise(DAR = MDirAcc(exp(Actual_Price),exp(Stack_model))) %>% pull()
+
+
+
+
+```
+
+As expected by the theory, the stacked model is succesfully able to pick the best of both worlds, it shows a low RMSe and also good performance in terms of DAR.
+
+```{r,cache=F,echo=FALSE,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+data.frame(Horizon=c(6,12,18,24),
+           RMSE=c(RMSE_Stack_ts6M,RMSE_Stack_ts1Y,RMSE_Stack_ts1.5Y,RMSE_Stack_ts2Y),
+           DAR=c(DAR_Stack_ts6M,DAR_Stack_ts1Y,DAR_Stack_ts1.5Y,DAR_Stack_ts2Y)) %>% knitr::kable()
+
+
+
+
+data.frame(Horizon=c(6,12,18,24),
+           RMSE=c(RMSE_Stack_ts6M,RMSE_Stack_ts1Y,RMSE_Stack_ts1.5Y,RMSE_Stack_ts2Y),
+           DAR=c(DAR_Stack_ts6M,DAR_Stack_ts1Y,DAR_Stack_ts1.5Y,DAR_Stack_ts2Y)) %>% 
+ggplot(.,aes(x=Horizon,y=RMSE))+geom_point(color="red",size=5)+geom_smooth()+
+        geom_hline(yintercept = RMSE_BASELINE,linetype="dashed",color="red")+
+        labs(title = "Oil Price Stacked Model Forecasted RMSE 24 Months",
+             y="RMSE ($ USD)",
+             x="Time (Months)")+
+        ggthemes::theme_tufte()
+
+
+
+
+
+data.frame(Horizon=c(6,12,18,24),
+           RMSE=c(RMSE_Stack_ts6M,RMSE_Stack_ts1Y,RMSE_Stack_ts1.5Y,RMSE_Stack_ts2Y),
+           DAR=c(DAR_Stack_ts6M,DAR_Stack_ts1Y,DAR_Stack_ts1.5Y,DAR_Stack_ts2Y)) %>%
+        mutate(DAR=DAR*100) %>%
+ggplot(.,aes(x=Horizon,y=DAR))+geom_point(color="red",size=5)+geom_smooth()+
+        geom_hline(yintercept = DAR_BASELINE,linetype="dashed",color="red")+
+        labs(title = "Oil Price Stacked Model Forecasted DAR 24 Months",
+             y="DAR %",
+             x="Time (Months)")+
+        ylim(0,100)+
+        ggthemes::theme_tufte()
+
+
+WVPlots::GainCurvePlot(Ensemble_DF,"NNAR","Actual_Price","Gain Plot")
+
+```
+
+By plotting our 2 Year Active Rig predictions using the NNAR versus the actual number of Active Rigs on a Gain plot, we can obtain the Gini score, which is this case is 0.012, such a low value of Gini Score suggest that both curves are (Predictions vs Actual) are nearly equals.
+
+
+# LSTM Recurrent Neural Networks
+
+The stacked model gave us a hint of the benefits of using a combination model of time series autoregressive and structured data approaches, therefore the ideal model to use for this dataset, might be a recurrent neural network an RNN, and to be more specific a Long Short Term Memory Neural Network.
+
+LSTMs are quite useful in time series prediction tasks involving autocorrelation, the presence of correlation between the time series and lagged versions of itself, because of their ability to maintain state and recognize patterns over the length of the time series. The recurrent architecture enables the states to persist, or communicate between updates of the weights as each epoch progresses. Further, the LSTM cell architecture enhances the RNN by enabling long term persistence in addition to short term, which is fascinating!
+
+## LSTM Theory
+
+Long Short Term Memory networks – usually just called “LSTMs” – are a special kind of RNN, capable of learning long-term dependencies. They were introduced by Hochreiter & Schmidhuber (1997), and were refined and popularized by many people in following work.1 They work tremendously well on a large variety of problems, and are now widely used.
+
+LSTMs are explicitly designed to avoid the long-term dependency problem. Remembering information for long periods of time is practically their default behavior, not something they struggle to learn!
+
+All recurrent neural networks have the form of a chain of repeating modules of neural network. In standard RNNs, this repeating module will have a very simple structure, such as a single tanh layer.
+
+![](https://colah.github.io/posts/2015-08-Understanding-LSTMs/img/LSTM3-SimpleRNN.png)
+**The repeating module in a standard RNN contains a single layer.**
+
+LSTMs also have this chain like structure, but the repeating module has a different structure. Instead of having a single neural network layer, there are four, interacting in a very special way.
+
+![](https://colah.github.io/posts/2015-08-Understanding-LSTMs/img/LSTM3-chain.png)
+**The repeating module in an LSTM contains four interacting layers.**
+
+![](https://colah.github.io/posts/2015-08-Understanding-LSTMs/img/LSTM2-notation.png)
+
+In the above diagram, each line carries an entire vector, from the output of one node to the inputs of others. The pink circles represent pointwise operations, like vector addition, while the yellow boxes are learned neural network layers. Lines merging denote concatenation, while a line forking denote its content being copied and the copies going to different locations.
+
+The key to LSTMs is the cell state, the horizontal line running through the top of the diagram.
+
+The cell state is kind of like a conveyor belt. It runs straight down the entire chain, with only some minor linear interactions. It’s very easy for information to just flow along it unchanged.
+
+![](https://colah.github.io/posts/2015-08-Understanding-LSTMs/img/LSTM3-C-line.png)
+
+The LSTM does have the ability to remove or add information to the cell state, carefully regulated by structures called gates.
+
+Gates are a way to optionally let information through. They are composed out of a sigmoid neural net layer and a pointwise multiplication operation.
+
+![](https://colah.github.io/posts/2015-08-Understanding-LSTMs/img/LSTM3-gate.png)
+
+The sigmoid layer outputs numbers between zero and one, describing how much of each component should be let through. A value of zero means “let nothing through,” while a value of one means “let everything through!”
+
+An LSTM has three of these gates, to protect and control the cell state.
+
+[source: “Understanding LSTM Networks”](https://colah.github.io/posts/2015-08-Understanding-LSTMs/)
+
+## Building an LSTM Recurrent Neural Network for Oil Price
+
+The LSTM Neural Net will include all explanatory variables with the exception of Year and Month, since these date related variables will be directly handled by the LSTM, The neural net requires the input data as a matrix will all numeric parameters and scaled up it also requires the input of a third dimension which are the time indexes, so as the lag, which is the amount of time points that are going to be used as exploratory variables to train the network. for this specific case, we decided to train/test split the dataset, and choose the following paramters:
+
+lag: 12 months, equivalent to 1 year of data to be used as explanatory variables
+Batch Size = 4, to be used to train the model on each epoch
+Train: 504 data points,which represents the dataset up until the end of 2015 as in previous models
+Test: 24 Months, the last two years of data. 
+
+We will build the network using the Keras package using googles TensorFlow as the engine of the neural net. 
+
+For the initial architecture of our neural Net we will use:
+
+- An initial input layer
+- An LSTM layer with 100 units and a 3D input object
+- A dropout layer with a dropout rate of 0.5
+- An LSTM layer with 50 units
+- A dropout layer with a dropout rate of 0.5
+- An a dense layer of one unit to produce the final result
+
+as the neural network optimizer we will use "adam" instead of the classical "rmsProp" and we will use the mean squared errors "mse" as the loss function
+
+```{r,cache=TRUE,warning=FALSE,comment=NA,message=FALSE}
+
+Oil_LSTM <- select(OIL_MODIFIED,-Date,-Year,-Month)
+
+Oil_LSTM <- Oil_LSTM %>% mutate_if(is.factor,as.numeric)
+
+m2<-apply(Oil_LSTM, 2, mean)
+
+m2[10]
+
+std2<-apply(Oil_LSTM, 2, sd)
+
+std2[10]
+
+Oil_LSTM<-scale(Oil_LSTM,center = m2,scale = std2)
+
+datalags = 12
+train = Oil_LSTM[seq(480 + datalags), ]
+test = Oil_LSTM[480 + datalags + seq(24+ datalags), ]
+batch.size = 4
+
+x.train = array(data = lag(cbind(train[,1], 
+                                 train[,2],
+                                 train[,3],
+                                 train[,4],
+                                 train[,5],
+                                 train[,6],
+                                 train[,7],
+                                 train[,8],
+                                 train[,9],
+                                 train[,10],
+                                 train[,11],
+                                 train[,12],
+                                 train[,13],
+                                 train[,14],
+                                 train[,15],
+                                 train[,16],
+                                 train[,17],
+                                 train[,18],
+                                 train[,19],
+                                 train[,20]), datalags)[-(1:datalags), ],
+                dim = c(nrow(train) - datalags, datalags, 20))
+                        
+
+y.train = array(data = train[,10][-(1:datalags)], dim = c(nrow(train)-datalags, 1))
+
+
+x.test = array(data = lag(cbind(test[,1], 
+                                test[,2],
+                                test[,3],
+                                test[,4],
+                                test[,5],
+                                test[,6],
+                                test[,7],
+                                test[,8],
+                                test[,9],
+                                test[,10],
+                                test[,11],
+                                test[,12],
+                                test[,13],
+                                test[,14],
+                                test[,15],
+                                test[,16],
+                                test[,17],
+                                test[,18],
+                                test[,19],
+                                test[,20]), datalags)[-(1:datalags), ], 
+               dim = c(nrow(test) - datalags, datalags, 20))
+
+y.test = array(data = test[,10][-(1:datalags)], dim = c(nrow(test) - datalags, 1))
+
+
+set.seed(123)
+
+
+LSTM <- keras_model_sequential()
+
+LSTM %>%
+        layer_lstm(units = 100,
+                   input_shape = c(datalags, 20),
+                   batch_size = batch.size,
+                   return_sequences = TRUE,
+                   stateful = TRUE) %>%
+        layer_dropout(rate = 0.5) %>%
+        layer_lstm(units = 50,
+                   return_sequences = FALSE,
+                   stateful = TRUE) %>%
+        layer_dropout(rate = 0.5) %>%
+        layer_dense(units = 1)
+
+LSTM %>%
+        compile(loss = 'mae', optimizer = 'adam')
+
+LSTM
+
+for(i in 1:480){
+        LSTM %>% fit(x = x.train,
+                      y = y.train,
+                      batch_size = batch.size,
+                      epochs = 1,
+                      verbose = 0,
+                      shuffle = FALSE)
+        LSTM %>% reset_states()
+}
+
+```
+
+```{r,cache=F,echo=F,warning=FALSE,comment=NA,message=FALSE,fig.align='center'}
+
+load("Models_Time_ML_regression_log_transform.RData")
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_LSTM_tr,RMSE_LSTM_ts6M,RMSE_LSTM_ts1Y,RMSE_LSTM_ts1.5Y,RMSE_LSTM_ts2Y),
+           DAR= c(DAR_LSTM_tr,DAR_LSTM_ts6M,DAR_LSTM_ts1Y,DAR_LSTM_ts1.5Y,DAR_LSTM_ts2Y)) %>% 
+        mutate(DAR_NUM=round(DAR*Horizon)) %>%
+        mutate(DAR=DAR*100) %>% knitr::kable()
+
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_LSTM_tr,RMSE_LSTM_ts6M,RMSE_LSTM_ts1Y,RMSE_LSTM_ts1.5Y,RMSE_LSTM_ts2Y),
+           DAR= c(DAR_LSTM_tr,DAR_LSTM_ts6M,DAR_LSTM_ts1Y,DAR_LSTM_ts1.5Y,DAR_LSTM_ts2Y)) %>% 
+        mutate(DAR_NUM=round(DAR*Horizon)) %>%
+        mutate(DAR=DAR*100) %>% 
+        ggplot(.,aes(x=Horizon,y=RMSE))+geom_point(color="red",size=5)+geom_smooth()+
+        geom_hline(yintercept = RMSE_BASELINE,linetype="dashed",color="red")+
+        labs(title = "Oil Price LSTM Neural Net Model Forecasted RMSE 24 Months",
+             y="RMSE ($ USD)",
+             x="Time (Months)")+
+        ggthemes::theme_tufte()
+
+data.frame(Horizon = c(0,6,12,18,24),
+           RMSE=c(RMSE_LSTM_tr,RMSE_LSTM_ts6M,RMSE_LSTM_ts1Y,RMSE_LSTM_ts1.5Y,RMSE_LSTM_ts2Y),
+           DAR= c(DAR_LSTM_tr,DAR_LSTM_ts6M,DAR_LSTM_ts1Y,DAR_LSTM_ts1.5Y,DAR_LSTM_ts2Y)) %>% 
+        mutate(DAR_NUM=round(DAR*Horizon)) %>%
+        mutate(DAR=DAR*100) %>% 
+        ggplot(.,aes(x=Horizon,y=DAR))+geom_point(color="red",size=5)+geom_smooth()+
+        geom_hline(yintercept = DAR_BASELINE,linetype="dashed",color="red")+
+        labs(title = "Oil Price LSTM Neural Net Model Forecasted DAR 24 Months",
+             y="DAR %",
+             x="Time (Months)")+
+        ylim(0,100)+
+        ggthemes::theme_tufte()
+
+
+```
+
+On the short term, less than 12 months, the LSTM Neural Net provides incredible accurate results, altought after this period of time, the performance of the model starts to decay up until it is not able to beat the baselines.
+
+By looking at the in train RMSE, we might guess that there is still plenty of room for improvement in terms of the architecture of the neural net, however this might require more extensive empirical optimization, since as it has been stated by many deep learning experts, the architecture of these kind of models is more an art rather than an strict science.
+
+# Conclusions
+
+- The Best model obtained on this work for the prediction of future Monthly Oil Prices, is an stacked model using a simple linear Meta learner of all previously generated models, which is predominantly influenced by an autoregressive Neural Network NNAR and XGboost regression values.
+
+- Using the selected stacked model it is possible to predict future Oil prices with an RMSE of ~ 7 USD Dollars and ~ 70% directional accuracy, up until two years ahead of training data.
+
+- In terms of testing data RMSE values, the best model performance is achieved by using XGboost.
+
+- In terms of testing data DAR, the best model performance is achieved by using an autoregressive Neural Network NNAR .
+
+- The stacked method is able to provide better performance in comparisson with the basic LSTM Neural net.
+
+- A bigger dataset, might yield better results for an LSTM.
